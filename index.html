@@ -202,6 +202,8 @@ function serveTargetIsLeft(hitter) {
 }
 
 let servePending = false, serveTimer = 0;
+let tossBall = { active: false, wx: 0, timer: 0 };
+const TOSS_FRAMES = 32;
 
 function prepareServe() {
   serve1st = true;
@@ -355,21 +357,20 @@ function updateBall() {
   ball.wx += ball.vx;
   ball.z  += ball.vz;
 
-  // ネット判定 (z が 0.5 をまたぐ瞬間)
+  // ネット判定: バウンド前のボールが正規化高さ閾値を下回ったらネットイン
   const atNet = ball.z > 0.46 && ball.z < 0.54;
-  if (atNet) {
-    const {by} = bScreen();
+  if (atNet && !ball.bounced) {
     if (ball.isServe && !ball.netTouched) {
-      if (by >= NET_TOP_Y - 2) {
+      if (ball.h < 0.05) {
         // ネット本体に当たった → フォルト
         serveFault();
         return;
-      } else if (by >= NET_TOP_Y - 8) {
+      } else if (ball.h < 0.18) {
         // ネット上端をかすった → レット可能性フラグ
         ball.netTouched = true;
       }
     } else if (!ball.isServe) {
-      if (by >= NET_TOP_Y) {
+      if (ball.h < 0.05) {
         // ラリー中のネット → ポイント
         awardPoint(ball.owner === 0 ? 1 : 0);
         return;
@@ -479,7 +480,7 @@ function updateCPU(dt) {
   if (Math.abs(dx) > 1) cpu.wx += Math.sign(dx) * Math.min(Math.abs(dx), cpu.spd);
 
   // ヒット判定: CPU側にボールが来てかつ接触範囲内
-  if (ball.inPlay && ball.owner === 0 && ball.z < 0.35 && ball.h < 0.32) {
+  if (ball.inPlay && ball.owner === 0 && ball.z < 0.42 && ball.h < 0.45) {
     if (Math.abs(ball.wx - cpu.wx) < 110) {
       cpu.shootTimer += (dt || 16);
       if (cpu.shootTimer > d.react * 16) {
@@ -564,6 +565,14 @@ function applySwipeType(dy) {
   else if (dy >  30) pl.shotType = 'slice';
 }
 function beginCharge() {
+  if (servePending && sc.server === 0 && !tossBall.active) {
+    tossBall.active = true;
+    tossBall.wx = pl.wx;
+    tossBall.timer = 0;
+    pl.state = 'tossing';
+    hideMsg();
+    return;
+  }
   if (pl.state === 'idle' || pl.state === 'cool') {
     pl.state = 'charge'; pl.charge = 0; pl.shotType = 'flat';
   }
@@ -623,6 +632,7 @@ function render() {
   drawScore();
   drawCourt();
   if (ball.inPlay) drawBall();
+  if (tossBall.active) drawTossBall();
   drawActor(cpu, false);
   drawActor(pl,  true);
   drawHint();
@@ -775,6 +785,23 @@ function drawBall() {
   ctx.beginPath(); ctx.arc(sx, by, r, 0, Math.PI*2); ctx.fill();
 }
 
+// ── トスボール描画 ────────────────────────────────────────────
+function drawTossBall() {
+  const { sx } = proj(tossBall.wx, 1.0);
+  const progress = tossBall.timer / TOSS_FRAMES;
+  const riseH = Math.sin(progress * Math.PI) * 80;
+  const by = PL_SERVE_Y - 52 - riseH;
+  const r = 6.5;
+  const gr = ctx.createRadialGradient(sx - r*0.35, by - r*0.35, r*0.08, sx, by, r);
+  gr.addColorStop(0, '#fff9c4');
+  gr.addColorStop(0.7, '#d4b800');
+  gr.addColorStop(1, '#b39700');
+  ctx.fillStyle = gr;
+  ctx.beginPath();
+  ctx.arc(sx, by, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // ── 選手描画 ─────────────────────────────────────────────────
 function drawActor(p, isPlayer) {
   const z  = isPlayer ? 1.0 : 0.0;
@@ -860,6 +887,15 @@ function loop(ts) {
 
   if (phase === 'playing') {
     updatePlayer();
+    if (tossBall.active) {
+      tossBall.wx = pl.wx;
+      tossBall.timer++;
+      if (tossBall.timer >= TOSS_FRAMES) {
+        tossBall.active = false;
+        pl.state = 'idle';
+        if (servePending && sc.server === 0) doServe(0);
+      }
+    }
     updateBall();
     updateCPU(dt);
     // CPU自動サーブ
