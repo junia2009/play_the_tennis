@@ -1116,7 +1116,7 @@ function showDiff() {
       <button class="btn${diff==='normal'?' sel':''}" onclick="setDiff('normal')">NORMAL</button>
       <button class="btn${diff==='hard'?' sel':''}"   onclick="setDiff('hard')">HARD</button>
     </div>
-    <button class="btn" onclick="startGame()" style="margin-top:6px">スタート！</button>`;
+    <div class="row"><button class="btn" onclick="startGame()">スタート！</button></div>`;
 }
 function setDiff(d) { diff = d; showDiff(); }
 function startGame() {
