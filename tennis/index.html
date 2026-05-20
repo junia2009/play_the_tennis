@@ -166,7 +166,7 @@ function bScreen() {
 
 // ショット: 放物線の初速 vh = 0.5*G*frames (ターゲットzでh=0になる正確な物理)
 function shoot(hitter, targetWx, targetZ, spin, power, isServe) {
-  const fromZ = hitter === 0 ? 1.0 : 0.0;
+  const fromZ = ball.z;
   const dz    = Math.abs(targetZ - fromZ);
 
   // スピン別速度係数
@@ -433,10 +433,10 @@ function updateBall() {
   }
 
   // アウト (コート外へ飛んだ)
-  if (ball.z >  1.08) { awardPoint(1); return; }
-  if (ball.z < -0.08) { awardPoint(0); return; }
+  if (ball.z >  1.08) { awardPoint(ball.bounced ? ball.owner : 1 - ball.owner); return; }
+  if (ball.z < -0.08) { awardPoint(ball.bounced ? ball.owner : 1 - ball.owner); return; }
   if (ball.bounced && (ball.wx < CT.left - 30 || ball.wx > CT.right + 30)) {
-    awardPoint(ball.owner === 0 ? 1 : 0); return;
+    awardPoint(1 - ball.owner); return;
   }
 }
 
@@ -454,9 +454,9 @@ function newPlayers() {
 //  DIFFICULTY
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const DIFFS = {
-  easy:   { spd:2.4, react:28, acc:0.52, miss:0.20, corner:0.10 },
+  easy:   { spd:2.4, react:22, acc:0.52, miss:0.20, corner:0.10 },
   normal: { spd:3.5, react:17, acc:0.78, miss:0.07, corner:0.30 },
-  hard:   { spd:4.7, react:8,  acc:0.95, miss:0.02, corner:0.55 }
+  hard:   { spd:4.7, react:5,  acc:0.95, miss:0.02, corner:0.55 }
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -468,7 +468,7 @@ function updateCPU(dt) {
   if (!ball.inPlay) return;
 
   // ボール落下点を予測して移動
-  if (ball.vz < 0) {
+  if (ball.owner === 0) {
     const f   = ball.z / Math.max(0.001, Math.abs(ball.vz));
     const pred = ball.wx + ball.vx * f * d.acc +
                  (Math.random() - 0.5) * (1 - d.acc) * 60;
@@ -490,7 +490,7 @@ function updateCPU(dt) {
         if (Math.random() < d.corner) tx = Math.random() < 0.5 ? CT.left+18 : CT.right-18;
         const spins = ['flat','topspin','slice'];
         const sp = diff === 'hard' ? spins[Math.floor(Math.random()*3)] : 'flat';
-        shoot(1, clamp(tx, CT.left+15, CT.right-15), 0.80, sp, 0.5+Math.random()*0.4, false);
+        shoot(1, clamp(tx, CT.left+15, CT.right-15), 0.68+Math.random()*0.22, sp, 0.5+Math.random()*0.4, false);
       }
     }
   } else {
@@ -606,10 +606,10 @@ function updatePlayer() {
       doServe(0);
     }
     // ラリー返球
-    else if (ball.inPlay && ball.owner === 1 && ball.z > 0.60 && ball.h < 0.40) {
-      if (Math.abs(ball.wx - pl.wx) < 120) {
+    else if (ball.inPlay && ball.owner === 1 && ball.z > 0.55 && ball.h < 0.65) {
+      if (Math.abs(ball.wx - pl.wx) < 150) {
         const pwr  = Math.min(1, pl.charge / 45);
-        const deep = pl.shotType === 'lob' ? 0.06 : 0.15;
+        const deep = pl.shotType === 'lob' ? 0.06 : 0.07 + Math.random() * 0.18;
         const tx   = CT.cx + (Math.random() - 0.5) * 210;
         shoot(0, clamp(tx, CT.left+15, CT.right-15), deep, pl.shotType, pwr, false);
       }
