@@ -519,25 +519,24 @@ function toGame(cx2, cy2) {
   const r = cv.getBoundingClientRect();
   return { x:(cx2-r.left)/r.width*W, y:(cy2-r.top)/r.height*H };
 }
-const mouse = { down:false, sx:0, sy:0, x:0 };
+const mouse = { down:false, sx:0, sy:0, x:0, y:0 };
 cv.addEventListener('mousedown', e => {
   const g = toGame(e.clientX, e.clientY);
-  mouse.x=g.x; mouse.sx=g.x; mouse.sy=g.y; mouse.down=true;
+  mouse.x=g.x; mouse.y=g.y; mouse.sx=g.x; mouse.sy=g.y; mouse.down=true;
   if (phase === 'playing') beginCharge();
 });
 cv.addEventListener('mouseup', e => {
-  if (phase === 'playing') {
-    const g = toGame(e.clientX, e.clientY);
-    applySwipeType(g.y - mouse.sy);
-    relShot();
-  }
+  if (phase === 'playing') relShot();
   mouse.down = false;
 });
 cv.addEventListener('mousemove', e => {
   if (!mouse.down || phase !== 'playing') return;
   const g = toGame(e.clientX, e.clientY);
   pl.wx = clamp(pl.wx + (g.x - mouse.x)*1.7, CT.left+14, CT.right-14);
-  mouse.x = g.x;
+  if (!servePending) {
+    pl.y = clamp(pl.y + (g.y - mouse.y)*1.7, NET_SY+25, CT.bot+25);
+  }
+  mouse.x = g.x; mouse.y = g.y;
 });
 let touch = { x:0, sx:0, sy:0, y:0 };
 cv.addEventListener('touchstart', e => {
@@ -549,21 +548,19 @@ cv.addEventListener('touchstart', e => {
 cv.addEventListener('touchmove', e => {
   e.preventDefault();
   const g = toGame(e.touches[0].clientX, e.touches[0].clientY);
-  if (phase === 'playing') pl.wx = clamp(pl.wx+(g.x-touch.x)*1.7, CT.left+14, CT.right-14);
+  if (phase === 'playing') {
+    pl.wx = clamp(pl.wx+(g.x-touch.x)*1.7, CT.left+14, CT.right-14);
+    if (!servePending) {
+      pl.y = clamp(pl.y+(g.y-touch.y)*1.7, NET_SY+25, CT.bot+25);
+    }
+  }
   touch.x=g.x; touch.y=g.y;
 }, {passive:false});
 cv.addEventListener('touchend', e => {
   e.preventDefault();
-  if (phase === 'playing') {
-    applySwipeType(touch.y - touch.sy);
-    relShot();
-  }
+  if (phase === 'playing') relShot();
 }, {passive:false});
 
-function applySwipeType(dy) {
-  if      (dy < -30) pl.shotType = 'lob';
-  else if (dy >  30) pl.shotType = 'slice';
-}
 function beginCharge() {
   if (servePending && sc.server === 0 && !tossBall.active) {
     tossBall.active = true;
@@ -591,8 +588,8 @@ function updatePlayer() {
 
   // ラリー中のみ前後移動可能 (サーブ待ち中は y を動かさない)
   if (!servePending) {
-    if (keys['ArrowUp'])   pl.y = clamp(pl.y-s*0.7, NET_SY+45, CT.bot+5);
-    if (keys['ArrowDown']) pl.y = clamp(pl.y+s*0.7, NET_SY+45, CT.bot+5);
+    if (keys['ArrowUp'])   pl.y = clamp(pl.y-s, NET_SY+25, CT.bot+25);
+    if (keys['ArrowDown']) pl.y = clamp(pl.y+s, NET_SY+25, CT.bot+25);
   }
 
   if (pl.state === 'charge') {
@@ -606,8 +603,9 @@ function updatePlayer() {
       doServe(0);
     }
     // ラリー返球
-    else if (ball.inPlay && ball.owner === 1 && ball.z > 0.58 && ball.h < 0.48) {
-      if (Math.abs(ball.wx - pl.wx) < 90) {
+    else if (ball.inPlay && ball.owner === 1 && ball.z > 0.50 && ball.h < 0.55) {
+      const plZ = (pl.y - CT.top) / (CT.bot - CT.top);
+      if (Math.abs(ball.z - plZ) < 0.18 && Math.abs(ball.wx - pl.wx) < 90) {
         const pwr  = Math.min(1, pl.charge / 45);
         const deep = pl.shotType === 'lob' ? 0.06 : 0.07 + Math.random() * 0.18;
         const tx   = CT.cx + (Math.random() - 0.5) * 210;
@@ -804,11 +802,11 @@ function drawTossBall() {
 
 // ── 選手描画 ─────────────────────────────────────────────────
 function drawActor(p, isPlayer) {
-  const z  = isPlayer ? 1.0 : 0.0;
-  const {sx} = proj(p.wx, z);
+  const z  = isPlayer ? clamp((p.y - CT.top) / (CT.bot - CT.top), 0.5, 1.1) : 0.0;
+  const {sx, scale} = proj(p.wx, z);
   // プレイヤー: p.y(ベースライン可動), CPU: 固定 Y
   const sy  = isPlayer ? p.y : CPU_SERVE_Y + 30;
-  const sc2 = isPlayer ? 1.0 : 0.68;
+  const sc2 = isPlayer ? scale : 0.68;
 
   ctx.save();
   ctx.translate(sx, sy);
@@ -858,8 +856,8 @@ function drawActor(p, isPlayer) {
 function drawHint() {
   if (phase !== 'playing') return;
   ctx.fillStyle='rgba(255,255,255,.33)'; ctx.font='9px Arial'; ctx.textAlign='center';
-  ctx.fillText('← → / ドラッグ: 移動　|　SPACE / タップ: ショット', W/2, CT.bot+22);
-  ctx.fillText('Z: トップスピン　X: スライス　C: ロブ　|　上スワイプ: ロブ　下スワイプ: スライス', W/2, CT.bot+36);
+  ctx.fillText('矢印 / ドラッグ: 自由移動　|　SPACE / タップ: ショット', W/2, CT.bot+22);
+  ctx.fillText('Z: トップスピン　X: スライス　C: ロブ', W/2, CT.bot+36);
   ctx.textAlign='left';
 }
 
