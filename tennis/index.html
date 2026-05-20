@@ -606,8 +606,8 @@ function updatePlayer() {
       doServe(0);
     }
     // ラリー返球
-    else if (ball.inPlay && ball.owner === 1 && ball.z > 0.55 && ball.h < 0.65) {
-      if (Math.abs(ball.wx - pl.wx) < 150) {
+    else if (ball.inPlay && ball.owner === 1 && ball.z > 0.58 && ball.h < 0.48) {
+      if (Math.abs(ball.wx - pl.wx) < 90) {
         const pwr  = Math.min(1, pl.charge / 45);
         const deep = pl.shotType === 'lob' ? 0.06 : 0.07 + Math.random() * 0.18;
         const tx   = CT.cx + (Math.random() - 0.5) * 210;
