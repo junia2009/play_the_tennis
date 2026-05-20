@@ -380,9 +380,9 @@ function updateBall() {
 
   // ━━━━━━━ バウンス判定 ━━━━━━━
   if (ball.h <= 0 && ball.vh < 0) {
-    // 2回目のバウンス → ポイント確定
+    // 2回目のバウンス → レシーバーが打ち返せなかった → 打った側がポイント
     if (ball.bounced) {
-      awardPoint(ball.owner === 0 ? 1 : 0);
+      awardPoint(ball.owner);
       return;
     }
 
