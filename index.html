@@ -734,7 +734,7 @@ function render() {
   if (tossBall.active) drawTossBall();
   drawActor(cpu, false);
   drawActor(pl,  true);
-  drawControls();
+  if (phase === 'playing') drawControls();
 }
 
 // ── 仮想スティック & ボタン描画 ───────────────────────────────
