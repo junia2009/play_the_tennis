@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Tennis Web Game</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#0d1b2a;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;font-family:Arial,sans-serif;color:#fff;overflow:hidden;
+  user-select:none;-webkit-user-select:none;
+}
+#wrap{position:relative;width:100%;max-width:560px}
+canvas{display:block;width:100%;height:auto;touch-action:none}
+#overlay{
+  position:absolute;top:0;left:0;right:0;bottom:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.78);z-index:10;
+}
+h1{font-size:clamp(30px,8vw,56px);text-shadow:0 0 24px #4fc3f7;letter-spacing:4px;margin-bottom:6px}
+h2{font-size:clamp(14px,3.5vw,22px);color:#90caf9;margin-bottom:28px}
+.btn{
+  background:linear-gradient(135deg,#1565c0,#0d47a1);
+  border:2px solid #42a5f5;color:#fff;padding:11px 32px;
+  font-size:clamp(13px,2.8vw,17px);border-radius:30px;cursor:pointer;
+  margin:7px;transition:all .18s;letter-spacing:1px;
+}
+.btn:hover{transform:scale(1.06);background:linear-gradient(135deg,#1976d2,#1565c0)}
+.btn.sel{background:linear-gradient(135deg,#00796b,#004d40);border-color:#26a69a}
+.dbg{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:14px 0}
+#msg{
+  position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(0,0,20,.88);border:2px solid #42a5f5;border-radius:12px;
+  padding:16px 36px;font-size:clamp(14px,3.2vw,20px);text-align:center;
+  z-index:20;pointer-events:none;opacity:0;transition:opacity .25s;white-space:nowrap;
+}
+#msg.on{opacity:1}
+#hint{
+  position:absolute;bottom:4px;left:0;right:0;text-align:center;
+  font-size:clamp(8px,1.4vw,11px);color:rgba(255,255,255,.45);pointer-events:none;
+}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="560" height="680"></canvas>
+  <div id="overlay"><h1>🎾 TENNIS</h1><h2>Web Game</h2><div id="oc"></div></div>
+  <div id="msg"></div>
+  <div id="hint"></div>
+</div>
+<script>
+'use strict';
+// ── canvas ────────────────────────────────────────────────────
+const cv = document.getElementById('c'), cx = cv.getContext('2d');
+const W=560, H=680;
+
+// ── court geometry ────────────────────────────────────────────
+const CT={top:118,bot:558,left:55,right:505,cx:280};
+// z: 0=cpu baseline, 1=player baseline; 0.5=net
+
+// ── state ─────────────────────────────────────────────────────
+let phase='title', diff='normal', raf=0;
+
+// ── score ─────────────────────────────────────────────────────
+const PL=['0','15','30','40'];
+let sc;
+function newScore(){
+  sc={sets:[0,0],games:[0,0],pts:[0,0],
+      tb:false,tbPts:[0,0],
+      server:Math.random()<.5?0:1,
+      adv:-1};  // adv: -1=none, 0=player, 1=cpu (deuce situation)
+}
+
+// ── players ───────────────────────────────────────────────────
+let pl,cpu;
+function newPlayers(){
+  pl={x:CT.cx,y:CT.bot-44,spd:5,
+      state:'idle',charge:0,shotType:'flat'};
+  cpu={x:CT.cx,y:CT.top+46,spd:4,
+       targetX:CT.cx,shootTimer:0};
+}
+
+// ── ball ──────────────────────────────────────────────────────
+let ball;
+function newBall(){
+  ball={x:CT.cx,z:sc.server===0?1.0:0.0,
+        h:0,          // height above ground (normalized)
+        vx:0,vz:0,vh:0,  // vh: upward velocity (h += vh each frame, vh -= g)
+        spin:'flat',bounced:false,inPlay:false,
+        owner:sc.server,serveReady:true};
+}
+
+const GRAVITY=0.016;
+const H_SCALE=180; // screen pixels per height-unit at z=1 scale
+
+// ── project ───────────────────────────────────────────────────
+function proj(x,z){
+  const p=0.42;
+  const scale=p+(1-p)*z;
+  const sy=CT.top+(CT.bot-CT.top)*z;
+  const sx=CT.cx+(x-CT.cx)*scale;
+  return{sx,sy,scale};
+}
+function ballScreen(){
+  const {sx,sy,scale}=proj(ball.x,ball.z);
+  return{sx,groundY:sy,ballY:sy-ball.h*H_SCALE*scale};
+}
+
+// ── shoot ─────────────────────────────────────────────────────
+function shoot(hitter,tx,tz,spin,power){
+  const fz=hitter===0?1.0:0.0;
+  let spd=0.026+power*0.02;
+  let arcH=0.20;
+  if(spin==='topspin'){spd+=0.008;arcH=0.14}
+  if(spin==='slice'){spd-=0.004;arcH=0.10}
+  if(spin==='lob'){spd-=0.010;arcH=0.44}
+  const dz=Math.abs(tz-fz);
+  const frames=dz/spd;
+  ball.vz=(tz-fz)/frames;
+  ball.vx=(tx-ball.x)/frames;
+  // physics: h(t)=vh0*t - 0.5*g*t^2, peak at t=vh0/g
+  // want h(frames/2)≈arcH => vh0=arcH*2*g/(frames) ... simplified:
+  ball.vh=arcH*2/(frames/2)*0.5+GRAVITY*(frames/4);
+  ball.spin=spin;
+  ball.bounced=false;
+  ball.inPlay=true;
+  ball.owner=hitter;
+  ball.serveReady=false;
+}
+
+// ── serve ─────────────────────────────────────────────────────
+let serveTimer=0, servePending=false;
+function prepareServe(){
+  newBall();
+  servePending=true;
+  serveTimer=sc.server===1?80:0; // cpu delays
+}
+function doServe(who){
+  ball.x=who===0?pl.x:cpu.x;
+  ball.z=who===0?1.0:0.0;
+  ball.h=0;
+  const tx=CT.cx+(Math.random()-.5)*180;
+  const tz=who===0?0.28:0.72;
+  shoot(who,tx,tz,'flat',0.5+Math.random()*.35);
+  servePending=false;
+}
+
+// ── award point ───────────────────────────────────────────────
+let ptDelay=0;
+function awardPoint(winner){
+  if(phase==='point'||phase==='result') return; // guard
+  phase='point'; ptDelay=85;
+  ball.inPlay=false;
+  const msg=winner===0?'あなたのポイント！':'CPUのポイント！';
+  showMsg(msg,1400);
+  if(sc.tb){
+    sc.tbPts[winner]++;
+    const w=sc.tbPts[winner],l=sc.tbPts[1-winner];
+    if(w>=7&&w-l>=2) winSet(winner);
+    return;
+  }
+  sc.pts[winner]++;
+  const pw=sc.pts[winner], pl2=sc.pts[1-winner];
+  if(pw>=3&&pl2>=3){
+    const d=pw-pl2;
+    if(d===0){sc.adv=-1}
+    else if(d>=2){winGame(winner);sc.pts=[0,0];sc.adv=-1}
+    else{sc.adv=winner}
+  } else if(pw>=4){
+    winGame(winner);sc.pts=[0,0];sc.adv=-1;
+  }
+}
+function winGame(winner){
+  sc.games[winner]++;
+  sc.server=1-sc.server;
+  const gw=sc.games[winner],gl=sc.games[1-winner];
+  if(gw>=6&&gw-gl>=2) winSet(winner);
+  else if(gw===6&&gl===6){sc.tb=true;sc.tbPts=[0,0]}
+}
+function winSet(winner){
+  sc.sets[winner]++;
+  sc.games=[0,0];sc.pts=[0,0];sc.tb=false;sc.tbPts=[0,0];sc.adv=-1;
+  if(sc.sets[winner]>=2){phase='result';showResult(winner)}
+}
+
+// ── physics update ────────────────────────────────────────────
+function updateBall(){
+  if(!ball.inPlay) return;
+  // integrate
+  ball.vh-=GRAVITY;
+  ball.h+=ball.vh;
+  ball.x+=ball.vx;
+  ball.z+=ball.vz;
+  // clamp x drift
+  const {groundY}=ballScreen();
+
+  // Bounce
+  if(ball.h<=0&&ball.vh<0){
+    if(ball.bounced){awardPoint(ball.owner===0?1:0);return} // second bounce
+    const inX=ball.x>CT.left-10&&ball.x<CT.right+10;
+    const validBounce=(ball.owner===0&&ball.z<0.5&&inX)||(ball.owner===1&&ball.z>0.5&&inX);
+    if(!validBounce){awardPoint(ball.owner===0?1:0);return}
+    ball.h=0;
+    ball.vh*=-(ball.spin==='topspin'?.52:ball.spin==='slice'?.44:.57);
+    if(ball.spin==='topspin') ball.vz*=1.08;
+    if(ball.spin==='slice')   ball.vz*=.82;
+    ball.bounced=true;
+  }
+
+  // net collision
+  if((ball.vz<0&&ball.z<=0.5&&ball.z>0.47)||(ball.vz>0&&ball.z>=0.5&&ball.z<0.53)){
+    if(ball.h<0.07){awardPoint(ball.owner===0?1:0);return}
+  }
+
+  // out of court
+  if(ball.z>1.08){awardPoint(1);return}
+  if(ball.z<-0.08){awardPoint(0);return}
+  if(ball.bounced&&(ball.x<CT.left-32||ball.x>CT.right+32)){
+    awardPoint(ball.owner===0?1:0);return;
+  }
+}
+
+// ── CPU AI ────────────────────────────────────────────────────
+const DIFFS={
+  easy:  {spd:2.6,reaction:35,acc:.50,miss:.18,corner:.10},
+  normal:{spd:3.8,reaction:20,acc:.76,miss:.07,corner:.30},
+  hard:  {spd:5.0,reaction:9, acc:.94,miss:.02,corner:.56}
+};
+function updateCPU(dt){
+  const d=DIFFS[diff];
+  cpu.spd=d.spd;
+  if(!ball.inPlay) return;
+  // predict landing x
+  if(ball.vz<0){
+    const frames=ball.z/Math.abs(ball.vz);
+    const pred=ball.x+ball.vx*frames*d.acc+(Math.random()-.5)*(1-d.acc)*100;
+    cpu.targetX=Math.max(CT.left+14,Math.min(CT.right-14,pred));
+  } else {
+    cpu.targetX=CT.cx;
+  }
+  const dx=cpu.targetX-cpu.x;
+  if(Math.abs(dx)>1) cpu.x+=Math.sign(dx)*Math.min(Math.abs(dx),cpu.spd);
+
+  // hit ball
+  if(ball.inPlay&&ball.owner===0&&ball.z<0.28&&ball.h<0.32){
+    const xDist=Math.abs(ball.x-cpu.x);
+    if(xDist<100){
+      cpu.shootTimer+=(dt||16);
+      if(cpu.shootTimer>d.reaction*16){
+        cpu.shootTimer=0;
+        if(Math.random()<d.miss){awardPoint(0);return}
+        let tx=CT.cx+(Math.random()-.5)*200;
+        if(Math.random()<d.corner) tx=Math.random()<.5?CT.left+22:CT.right-22;
+        const spins=['flat','topspin','slice'];
+        const sp=diff==='hard'?spins[Math.floor(Math.random()*3)]:'flat';
+        shoot(1,clamp(tx,CT.left+20,CT.right-20),0.78,sp,.5+Math.random()*.4);
+      }
+    }
+  } else {cpu.shootTimer=0}
+}
+
+// ── player input ──────────────────────────────────────────────
+const keys={};
+document.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(phase==='playing'){
+    if(e.code==='Space'){e.preventDefault();beginCharge()}
+    if(e.code==='KeyZ') pl.shotType='topspin';
+    if(e.code==='KeyX') pl.shotType='slice';
+    if(e.code==='KeyC') pl.shotType='lob';
+  }
+});
+document.addEventListener('keyup',e=>{
+  keys[e.code]=false;
+  if(phase==='playing'&&e.code==='Space') releaseShot();
+});
+
+// mouse
+const mouse={down:false,x:0,sx:0,sy:0};
+cv.addEventListener('mousedown',e=>{
+  const r=cv.getBoundingClientRect(),s=W/r.width;
+  mouse.x=(e.clientX-r.left)*s;mouse.sx=mouse.x;
+  mouse.sy=(e.clientY-r.top)*s;mouse.down=true;
+  if(phase==='playing') beginCharge();
+});
+cv.addEventListener('mouseup',e=>{
+  if(phase==='playing'){
+    const r=cv.getBoundingClientRect(),s=W/r.width;
+    const dy=(e.clientY-r.top)*s-mouse.sy;
+    if(dy<-38) pl.shotType='lob';
+    else if(dy>38) pl.shotType='slice';
+    releaseShot();
+  }
+  mouse.down=false;
+});
+cv.addEventListener('mousemove',e=>{
+  if(!mouse.down||phase!=='playing') return;
+  const r=cv.getBoundingClientRect(),s=W/r.width;
+  const nx=(e.clientX-r.left)*s;
+  pl.x=clamp(pl.x+(nx-mouse.x)*1.5,CT.left+14,CT.right-14);
+  mouse.x=nx;
+});
+
+// touch
+let touch={active:false,x:0,sx:0,sy:0};
+cv.addEventListener('touchstart',e=>{e.preventDefault();
+  const r=cv.getBoundingClientRect(),s=W/r.width,t=e.touches[0];
+  touch.x=(t.clientX-r.left)*s;touch.sx=touch.x;
+  touch.sy=(t.clientY-r.top)*s;touch.active=true;
+  if(phase==='playing') beginCharge();
+},{passive:false});
+cv.addEventListener('touchmove',e=>{e.preventDefault();
+  const r=cv.getBoundingClientRect(),s=W/r.width,t=e.touches[0];
+  const nx=(t.clientX-r.left)*s;
+  if(phase==='playing') pl.x=clamp(pl.x+(nx-touch.x)*1.5,CT.left+14,CT.right-14);
+  touch.x=nx;touch.y=(t.clientY-r.top)*s;
+},{passive:false});
+cv.addEventListener('touchend',e=>{e.preventDefault();
+  if(phase==='playing'){
+    const dy=(touch.y||touch.sy)-touch.sy;
+    if(dy<-38) pl.shotType='lob';
+    else if(dy>38) pl.shotType='slice';
+    releaseShot();
+  }
+  touch.active=false;
+},{passive:false});
+
+function beginCharge(){
+  if(pl.state==='idle'||pl.state==='cool'){
+    pl.state='charge';pl.charge=0;pl.shotType='flat';
+  }
+}
+function releaseShot(){
+  if(pl.state==='charge') pl.state='swing';
+}
+function updatePlayer(){
+  const spd=pl.spd;
+  if(keys['ArrowLeft'])  pl.x=clamp(pl.x-spd,CT.left+14,CT.right-14);
+  if(keys['ArrowRight']) pl.x=clamp(pl.x+spd,CT.left+14,CT.right-14);
+  if(keys['ArrowUp'])    pl.y=clamp(pl.y-spd*.7,CT.cx,CT.bot-20);
+  if(keys['ArrowDown'])  pl.y=clamp(pl.y+spd*.7,CT.cx,CT.bot-20);
+
+  if(pl.state==='charge'){
+    pl.charge++;
+    if(pl.charge>55) pl.state='swing'; // auto release
+  }
+  if(pl.state==='swing'){
+    if(!ball.inPlay&&servePending&&sc.server===0){
+      doServe(0);
+    } else if(ball.inPlay&&ball.z>0.72&&ball.owner===1&&ball.h<0.35){
+      const xDist=Math.abs(ball.x-pl.x);
+      if(xDist<90){
+        const power=Math.min(1,pl.charge/45);
+        const baseX=CT.cx+(Math.random()-.5)*180;
+        shoot(0,clamp(baseX,CT.left+20,CT.right-20),0.22,pl.shotType,power);
+      }
+    }
+    pl.state='cool';
+    setTimeout(()=>{if(pl.state==='cool')pl.state='idle'},360);
+    pl.charge=0;
+  }
+}
+
+// ── render ────────────────────────────────────────────────────
+function render(){
+  cx.clearRect(0,0,W,H);
+  // background gradient
+  const bg=cx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#102040');bg.addColorStop(1,'#0d1b2a');
+  cx.fillStyle=bg;cx.fillRect(0,0,W,H);
+
+  drawScoreboard();
+  drawCourt();
+  if(ball.inPlay) drawBall();
+  drawActor(cpu,false);
+  drawActor(pl,true);
+  updateHint();
+}
+
+function drawScoreboard(){
+  cx.fillStyle='rgba(0,10,30,.7)';
+  cx.fillRect(0,0,W,CT.top-8);
+
+  cx.textAlign='left';
+  // Column headers
+  const cols=[{label:'SET',x:10},{label:'GAME',x:170},{label:'POINT',x:310}];
+  cols.forEach(c=>{
+    cx.fillStyle='#546e7a';cx.font='bold 11px Arial';
+    cx.fillText(c.label,c.x,18);
+  });
+
+  // Values
+  cx.fillStyle='#fff';cx.font='bold 15px Arial';
+  cx.fillText(`CPU ${sc.sets[1]}  あなた ${sc.sets[0]}`,10,40);
+  cx.fillText(`${sc.games[1]} - ${sc.games[0]}`,170,40);
+
+  // Point display
+  let p0='',p1='';
+  if(sc.tb){p0=String(sc.tbPts[0]);p1=String(sc.tbPts[1])}
+  else{
+    const pw0=sc.pts[0],pw1=sc.pts[1];
+    if(pw0>=3&&pw1>=3){
+      if(sc.adv===-1){p0=p1='D'}
+      else{p0=sc.adv===0?'A':'40';p1=sc.adv===1?'A':'40'}
+    } else {
+      p0=PL[Math.min(3,pw0)];p1=PL[Math.min(3,pw1)];
+    }
+  }
+  cx.fillText(`CPU ${p1}  あなた ${p0}`,310,40);
+
+  // Server dot
+  const serverX=sc.server===0?450:390;
+  const serverLabel=sc.server===0?'▶ あなたのサーブ':'▶ CPUのサーブ';
+  cx.fillStyle='#ffd54f';cx.font='bold 11px Arial';
+  cx.textAlign='right';cx.fillText(serverLabel,W-8,30);
+  // TB indicator
+  if(sc.tb){cx.fillStyle='#ef9a9a';cx.font='11px Arial';cx.fillText('TIEBREAK',W-8,46)}
+  cx.textAlign='left';
+
+  // Difficulty badge
+  cx.fillStyle='rgba(255,255,255,.35)';cx.font='10px Arial';
+  cx.fillText(diff.toUpperCase(),W-52,52);
+}
+
+function drawCourt(){
+  // Court trapezoid
+  cx.save();
+  cx.beginPath();
+  cx.moveTo(CT.left,CT.bot);cx.lineTo(CT.right,CT.bot);
+  cx.lineTo(CT.right-58,CT.top);cx.lineTo(CT.left+58,CT.top);
+  cx.closePath();
+  const cg=cx.createLinearGradient(0,CT.top,0,CT.bot);
+  cg.addColorStop(0,'#1a5c38');cg.addColorStop(1,'#1e7a43');
+  cx.fillStyle=cg;cx.fill();
+
+  // Court boundary
+  cx.strokeStyle='rgba(255,255,255,.85)';cx.lineWidth=1.5;
+  cx.stroke();
+
+  // Perspective lines helper
+  const pl2=(x1,z1,x2,z2,col,w)=>{
+    const a=proj(x1,z1),b=proj(x2,z2);
+    cx.strokeStyle=col;cx.lineWidth=w;
+    cx.beginPath();cx.moveTo(a.sx,a.sy);cx.lineTo(b.sx,b.sy);cx.stroke();
+  };
+
+  // Center lines
+  pl2(CT.cx,0,CT.cx,.5,'rgba(255,255,255,.55)',1);
+  pl2(CT.cx,.5,CT.cx,1,'rgba(255,255,255,.55)',1);
+  // Service lines
+  pl2(CT.left,.25,CT.right,.25,'rgba(255,255,255,.45)',1);
+  pl2(CT.left,.75,CT.right,.75,'rgba(255,255,255,.45)',1);
+
+  // Net
+  const nL=proj(CT.left,.5),nR=proj(CT.right,.5);
+  const netTopY=CT.top+(CT.bot-CT.top)*.5-16;
+  cx.strokeStyle='#eceff1';cx.lineWidth=2.5;
+  cx.beginPath();cx.moveTo(nL.sx,netTopY);cx.lineTo(nR.sx,netTopY);cx.stroke();
+  cx.strokeStyle='rgba(255,255,255,.3)';cx.lineWidth=1;
+  for(let i=0;i<=10;i++){
+    const nx=nL.sx+(nR.sx-nL.sx)*i/10;
+    cx.beginPath();cx.moveTo(nx,netTopY);cx.lineTo(nx+1.5,CT.top+(CT.bot-CT.top)*.5);cx.stroke();
+  }
+  cx.restore();
+}
+
+function drawBall(){
+  const{sx,groundY,ballY}=ballScreen();
+  const{scale}=proj(ball.x,ball.z);
+  const r=7*scale;
+
+  // Shadow on ground
+  cx.save();
+  cx.globalAlpha=Math.max(0,.5-ball.h*.4)*scale;
+  cx.fillStyle='#000';
+  cx.beginPath();cx.ellipse(sx,groundY,r*1.5,r*.5,0,0,Math.PI*2);cx.fill();
+  cx.restore();
+
+  // Ball
+  const gr=cx.createRadialGradient(sx-r*.3,ballY-r*.3,r*.1,sx,ballY,r);
+  gr.addColorStop(0,'#fff9c4');gr.addColorStop(1,'#c6b300');
+  cx.fillStyle=gr;
+  cx.beginPath();cx.arc(sx,ballY,r,0,Math.PI*2);cx.fill();
+  // spin indicator line
+  cx.strokeStyle='rgba(255,255,255,.4)';cx.lineWidth=.8;
+  cx.beginPath();cx.arc(sx,ballY,r*.7,0,Math.PI*2);cx.stroke();
+}
+
+function drawActor(p,isPlayer){
+  const z=isPlayer?1.0:0.0;
+  const{sx}=proj(p.x,z);
+  const sy=p.y;
+  const sc2=isPlayer?1.0:.72;
+  cx.save();cx.translate(sx,sy);cx.scale(sc2,sc2);
+
+  // Shadow
+  cx.globalAlpha=.28;cx.fillStyle='#000';
+  cx.beginPath();cx.ellipse(0,12,13,4,0,0,Math.PI*2);cx.fill();cx.globalAlpha=1;
+
+  // Legs
+  cx.fillStyle=isPlayer?'#fff':'#ddd';
+  cx.fillRect(-5,0,4,16);cx.fillRect(1,0,4,16);
+
+  // Body/shirt
+  cx.fillStyle=isPlayer?'#1565c0':'#c62828';
+  cx.fillRect(-8,-18,16,20);
+
+  // Head
+  cx.fillStyle='#ffcc80';
+  cx.beginPath();cx.arc(0,-24,8,0,Math.PI*2);cx.fill();
+
+  // Hair
+  cx.fillStyle=isPlayer?'#4e342e':'#212121';
+  cx.beginPath();cx.arc(0,-24,8,Math.PI,0);cx.fill();
+
+  // Racket arm
+  const swinging=isPlayer?(p.state==='swing'):false;
+  cx.save();cx.rotate(swinging?-0.9:0.25);
+  cx.strokeStyle='#6d4c41';cx.lineWidth=2;
+  cx.beginPath();cx.moveTo(7,-8);cx.lineTo(19,-20);cx.stroke();
+  // racket head
+  cx.strokeStyle=isPlayer?'#90caf9':'#ef9a9a';cx.lineWidth=1.5;
+  cx.strokeRect(17,-28,10,14);
+  cx.restore();
+
+  // Charge bar (player only)
+  if(isPlayer&&p.state==='charge'){
+    const pct=Math.min(1,p.charge/45);
+    cx.fillStyle=`hsl(${120-pct*120},100%,55%)`;
+    cx.fillRect(-12,-36,24*pct,4);
+    cx.strokeStyle='rgba(255,255,255,.6)';cx.lineWidth=1;
+    cx.strokeRect(-12,-36,24,4);
+  }
+  cx.restore();
+}
+
+function updateHint(){
+  document.getElementById('hint').textContent=
+    phase==='playing'?
+    '← → ↑ ↓ 移動 | SPACE / タップ: ショット | Z トップスピン | X スライス | C ロブ':
+    '';
+}
+
+// ── message box ───────────────────────────────────────────────
+let msgTmr=null;
+function showMsg(t,ms){
+  const el=document.getElementById('msg');
+  el.textContent=t;el.classList.add('on');
+  clearTimeout(msgTmr);
+  msgTmr=setTimeout(()=>el.classList.remove('on'),ms);
+}
+
+// ── game loop ─────────────────────────────────────────────────
+let last=0;
+function loop(ts){
+  const dt=ts-last;last=ts;
+  if(phase==='playing'){
+    updatePlayer();
+    updateBall();
+    updateCPU(dt);
+    // serve auto-trigger for CPU
+    if(servePending&&sc.server===1){
+      serveTimer--;
+      if(serveTimer<=0) doServe(1);
+    }
+    render();
+  } else if(phase==='point'){
+    ptDelay--;
+    render();
+    if(ptDelay<=0&&phase==='point'){
+      phase='playing';
+      prepareServe();
+    }
+  } else if(phase==='result'){
+    render();
+  }
+  raf=requestAnimationFrame(loop);
+}
+
+// ── screens ───────────────────────────────────────────────────
+function showTitle(){
+  phase='title';
+  const ov=document.getElementById('overlay');
+  ov.style.display='flex';
+  document.getElementById('oc').innerHTML=
+    `<button class="btn" onclick="showDiff()">ゲームスタート</button>`;
+}
+function showDiff(){
+  phase='diff';
+  document.getElementById('oc').innerHTML=`
+    <div style="color:#90caf9;font-size:clamp(13px,3vw,18px);margin-bottom:14px">難易度を選択</div>
+    <div class="dbg">
+      <button class="btn${diff==='easy'?' sel':''}" onclick="setDiff('easy')">EASY</button>
+      <button class="btn${diff==='normal'?' sel':''}" onclick="setDiff('normal')">NORMAL</button>
+      <button class="btn${diff==='hard'?' sel':''}" onclick="setDiff('hard')">HARD</button>
+    </div>
+    <button class="btn" onclick="startGame()" style="margin-top:8px">スタート！</button>`;
+}
+function setDiff(d){diff=d;showDiff()}
+function startGame(){
+  document.getElementById('overlay').style.display='none';
+  newScore();newPlayers();
+  phase='playing';
+  prepareServe();
+  if(!raf) raf=requestAnimationFrame(loop);
+}
+function showResult(winner){
+  const ov=document.getElementById('overlay');ov.style.display='flex';
+  const title=winner===0?'🏆 あなたの勝ち！':'😓 CPUの勝ち…';
+  document.getElementById('oc').innerHTML=`
+    <div style="font-size:clamp(20px,6vw,38px);margin-bottom:14px">${title}</div>
+    <div style="color:#90caf9;margin-bottom:22px">
+      あなた ${sc.sets[0]} セット - CPU ${sc.sets[1]} セット
+    </div>
+    <button class="btn" onclick="startGame()">もう一度</button>
+    <button class="btn" onclick="showTitle()">タイトルへ</button>`;
+}
+
+// ── utils ─────────────────────────────────────────────────────
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v))}
+
+// ── boot ─────────────────────────────────────────────────────
+newScore();newPlayers();newBall();
+render();
+showTitle();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
