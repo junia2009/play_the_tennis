@@ -1,0 +1,23 @@
+{
+  "name": "Tennis Web Game",
+  "short_name": "Tennis",
+  "description": "Play tennis in your browser — virtual stick controls and 4 shot types",
+  "start_url": "/play_the_tennis/",
+  "scope": "/play_the_tennis/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#2e7d32",
+  "background_color": "#1b5e20",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%232e7d32'/%3E%3Ccircle cx='96' cy='96' r='60' fill='none' stroke='%23fff' stroke-width='8'/%3E%3Cpath d='M40 96 Q96 60 152 96' fill='none' stroke='%23fff' stroke-width='8'/%3E%3Cpath d='M40 96 Q96 132 152 96' fill='none' stroke='%23fff' stroke-width='8'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%232e7d32'/%3E%3Ccircle cx='256' cy='256' r='160' fill='none' stroke='%23fff' stroke-width='20'/%3E%3Cpath d='M100 256 Q256 156 412 256' fill='none' stroke='%23fff' stroke-width='20'/%3E%3Cpath d='M100 256 Q256 356 412 256' fill='none' stroke='%23fff' stroke-width='20'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

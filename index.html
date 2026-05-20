@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Tennis Web Game</title>
+<link rel="manifest" href="/play_the_tennis/manifest.json">
+<meta name="theme-color" content="#2e7d32">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tennis">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{
@@ -1144,6 +1149,11 @@ function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
 newScore(); newPlayers(); newBall();
 render(); showTitle();
 raf = requestAnimationFrame(loop);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/play_the_tennis/sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>
