@@ -13,26 +13,26 @@ html,body{
   user-select:none;-webkit-user-select:none;
 }
 #wrap{position:relative;flex-shrink:0}
-canvas{display:block;touch-action:none;background:#0d1b2a}
+canvas{display:block;touch-action:none}
 #ov{
   position:absolute;top:0;left:0;right:0;bottom:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.80);z-index:10;
+  background:rgba(0,0,0,.80);z-index:10;border-radius:4px;
 }
-#ov h1{font-size:clamp(26px,10vw,52px);text-shadow:0 0 20px #4fc3f7;letter-spacing:3px;margin-bottom:4px}
-#ov h2{font-size:clamp(12px,4vw,20px);color:#90caf9;margin-bottom:24px}
+#ov h1{font-size:clamp(24px,9vw,50px);text-shadow:0 0 20px #4fc3f7;letter-spacing:3px;margin-bottom:4px}
+#ov h2{font-size:clamp(11px,3.5vw,19px);color:#90caf9;margin-bottom:22px}
 .btn{
   background:linear-gradient(135deg,#1565c0,#0d47a1);border:2px solid #42a5f5;
-  color:#fff;padding:10px 28px;font-size:clamp(12px,3.5vw,17px);border-radius:28px;
-  cursor:pointer;margin:6px;transition:.18s;letter-spacing:1px;
+  color:#fff;padding:10px 26px;font-size:clamp(11px,3.2vw,16px);border-radius:26px;
+  cursor:pointer;margin:5px;transition:.18s;letter-spacing:1px;
 }
 .btn:hover,.btn:active{background:linear-gradient(135deg,#1976d2,#1565c0);transform:scale(1.05)}
 .btn.sel{background:linear-gradient(135deg,#00796b,#004d40);border-color:#26a69a}
-.dbg{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:12px 0}
+.dbg{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:10px 0}
 #msg{
-  position:absolute;top:44%;left:50%;transform:translate(-50%,-50%);
-  background:rgba(0,0,20,.9);border:2px solid #42a5f5;border-radius:10px;
-  padding:12px 28px;font-size:clamp(12px,3.5vw,18px);text-align:center;
+  position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(0,0,20,.92);border:2px solid #42a5f5;border-radius:10px;
+  padding:10px 24px;font-size:clamp(11px,3.2vw,17px);text-align:center;
   z-index:20;pointer-events:none;opacity:0;transition:opacity .22s;white-space:nowrap;
 }
 #msg.on{opacity:1}
@@ -47,40 +47,36 @@ canvas{display:block;touch-action:none;background:#0d1b2a}
 <script>
 'use strict';
 
-// ── Canvas setup ───────────────────────────────────────────────────────────
-const cv = document.getElementById('c');
-const cx = cv.getContext('2d');
-// Internal resolution (portrait-optimized)
-const W = 400, H = 760;
+// ── Canvas ─────────────────────────────────────────────────────────────────
+const cv = document.getElementById('c'), cx = cv.getContext('2d');
+// Portrait-balanced internal resolution (not too tall)
+const W = 500, H = 680;
 cv.width = W; cv.height = H;
 
 function resize() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const s = Math.min(vw / W, vh / H, 1.4); // allow slight upscale
-  const cw = Math.round(W * s), ch = Math.round(H * s);
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H, 1.6);
+  const cw = Math.round(W*s), ch = Math.round(H*s);
   const wrap = document.getElementById('wrap');
-  wrap.style.width  = cw + 'px';
-  wrap.style.height = ch + 'px';
-  cv.style.width  = cw + 'px';
-  cv.style.height = ch + 'px';
+  wrap.style.width = cw+'px'; wrap.style.height = ch+'px';
+  cv.style.width   = cw+'px'; cv.style.height   = ch+'px';
 }
 window.addEventListener('resize', resize);
-window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+window.addEventListener('orientationchange', ()=>setTimeout(resize,120));
 resize();
 
 // ── Court geometry ─────────────────────────────────────────────────────────
-// z: 0 = CPU baseline (far), 1 = Player baseline (near)
-const CT = { top: 65, bot: 700, left: 22, right: 378, cx: 200 };
-const NET_H = 0.16; // normalized height threshold for net collision
+// z: 0=CPU baseline(far), 0.5=net, 1=Player baseline(near)
+const CT = { top:68, bot:558, left:22, right:478, cx:250 };
+// Perspective: top of court is P fraction of bottom width
+const P = 0.48;
 
-// ── Physics constants ──────────────────────────────────────────────────────
-const G = 0.014;        // gravity per frame
-const H_SCALE = 140;    // pixels per height unit at scale=1 (z=1)
+// ── Physics ────────────────────────────────────────────────────────────────
+const G       = 0.014;   // gravity per frame
+const H_SCALE = 80;      // screen-px per height-unit at scale=1
+const NET_H   = 0.25;    // net height (normalized) for collision
 
-// ── Game state ─────────────────────────────────────────────────────────────
-let phase = 'title'; // title | diff | playing | point | result
-let diff  = 'normal';
-let raf   = 0;
+// ── State ──────────────────────────────────────────────────────────────────
+let phase = 'title', diff = 'normal', raf = 0;
 
 // ── Score ──────────────────────────────────────────────────────────────────
 const PL = ['0','15','30','40'];
@@ -90,84 +86,104 @@ function newScore() {
     sets:[0,0], games:[0,0], pts:[0,0],
     tb:false, tbPts:[0,0],
     server: Math.random()<.5 ? 0 : 1,
-    adv: -1  // -1=none, 0=player adv, 1=cpu adv
+    adv: -1,        // -1=none, 0=player, 1=cpu
+    serveSide: 0    // 0=deuce(右), 1=adv(左) → alternates each point
   };
 }
 
-// ── Perspective projection ─────────────────────────────────────────────────
+// ── Projection ─────────────────────────────────────────────────────────────
 function proj(wx, z) {
-  const p = 0.36;
-  const scale = p + (1 - p) * z;
-  const sy = CT.top + (CT.bot - CT.top) * z;
-  const sx = CT.cx + (wx - CT.cx) * scale;
-  return { sx, sy, scale };
+  const scale = P + (1-P)*z;
+  return {
+    sx: CT.cx + (wx - CT.cx)*scale,
+    sy: CT.top + (CT.bot - CT.top)*z,
+    scale
+  };
 }
+const NET_SY = CT.top + (CT.bot-CT.top)*0.5; // net screen-y
 
 // ── Ball ───────────────────────────────────────────────────────────────────
 let ball;
 function newBall() {
   ball = {
-    wx: CT.cx,          // world x (CT.left..CT.right)
-    z: sc.server===0 ? 1.0 : 0.0, // depth 0..1
-    h: 0,               // height above ground (normalized)
-    vx: 0, vz: 0,       // horizontal velocities (per frame)
-    vh: 0,              // upward velocity (h changes by vh; vh decreases by G)
-    spin: 'flat',
-    bounced: false,
-    inPlay: false
+    wx: CT.cx, z: sc.server===0?1.0:0.0,
+    h:0, vx:0, vz:0, vh:0,
+    spin:'flat', bounced:false, inPlay:false,
+    isServe:false, owner: sc.server
   };
 }
 
 function ballScreen() {
-  const { sx, sy, scale } = proj(ball.wx, ball.z);
-  const by = Math.max(2, sy - ball.h * H_SCALE * scale); // clamp: ball stays in canvas
-  return { sx, groundY: sy, by, scale };
+  const {sx,sy,scale} = proj(ball.wx, ball.z);
+  return { sx, groundY:sy, by: Math.max(4, sy - ball.h*H_SCALE*scale), scale };
 }
 
 // ── Shoot ──────────────────────────────────────────────────────────────────
-function shoot(hitter, targetWx, targetZ, spin, power) {
-  const fromZ = hitter === 0 ? 1.0 : 0.0;
+// vh = 0.5*G*frames makes ball land exactly at targetZ (correct parabola)
+function shoot(hitter, targetWx, targetZ, spin, power, isServe) {
+  const fromZ = hitter===0 ? 1.0 : 0.0;
   const dz    = Math.abs(targetZ - fromZ);
 
-  // Speed per spin; power adds extra
-  let spd = 0.028 + power * 0.016;
-  if (spin === 'topspin') spd *= 1.22;
-  if (spin === 'slice')   spd *= 0.88;
-  if (spin === 'lob')     spd *= 0.52;
+  let spd = 0.022 + power*0.012;
+  if (spin==='topspin') spd *= 1.18;
+  if (spin==='slice')   spd *= 0.85;
+  if (spin==='lob')     spd *= 0.55;
 
   const frames = dz / spd;
   ball.vz = (targetZ - fromZ) / frames;
   ball.vx = (targetWx - ball.wx) / frames;
-
-  // ── KEY FIX ──────────────────────────────────────────────────────────────
-  // Parabola: h(t) = vh*t - 0.5*G*t²  with h(frames)=0 (lands at target)
-  // → vh = 0.5 * G * frames
-  ball.vh = 0.5 * G * frames;
-
+  ball.vh = Math.min(0.5*G*frames, 0.30); // cap prevents off-screen lobs
   ball.spin    = spin;
   ball.bounced = false;
   ball.inPlay  = true;
   ball.owner   = hitter;
+  ball.isServe = !!isServe;
 }
 
 // ── Serve ──────────────────────────────────────────────────────────────────
-let servePending = false, serveTimer = 0;
+let servePending=false, serveTimer=0;
+
+// Target box side: deuce(0)→左ボックス狙い, adv(1)→右ボックス狙い
+// Cross-court rule:
+//   Player serves from RIGHT(=deuce) → target LEFT box (wx < CT.cx) of CPU side
+//   Player serves from LEFT(=adv)    → target RIGHT box (wx > CT.cx) of CPU side
+//   CPU logic mirrors (their perspective is reversed)
+function serveTargetLeft(hitter) {
+  // Returns true if serve must land in x < CT.cx half
+  if (hitter===0) return sc.serveSide===0;   // player: deuce→left-box
+  else            return sc.serveSide===1;    // cpu: deuce→right-box (mirrored)
+}
 
 function prepareServe() {
   newBall();
   servePending = true;
-  serveTimer = sc.server === 1 ? 70 : 0;
-  if (sc.server === 0) showMsg('タップ / SPACEでサーブ', 99999);
+  serveTimer   = sc.server===1 ? 75 : 0;
+
+  // Auto-position server behind baseline
+  if (sc.server===0) {
+    // Player: deuce=right side, adv=left side
+    pl.wx = sc.serveSide===0 ? CT.cx+45 : CT.cx-45;
+    pl.y  = CT.bot - 14; // exactly at baseline
+    showMsg('タップ / SPACEでサーブ', 99999);
+  } else {
+    cpu.wx = sc.serveSide===0 ? CT.cx-45 : CT.cx+45;
+  }
 }
 
 function doServe(who) {
-  ball.wx = who === 0 ? pl.wx : cpu.wx;
-  ball.z  = who === 0 ? 1.0 : 0.0;
+  ball.wx = who===0 ? pl.wx  : cpu.wx;
+  ball.z  = who===0 ? 1.0    : 0.0;
   ball.h  = 0;
-  // Target: opponent's service box (between net and their service line)
-  const tx = CT.cx + (Math.random() - 0.5) * 160;
-  const tz = who === 0 ? 0.22 : 0.78;
-  shoot(who, clamp(tx, CT.left+15, CT.right-15), tz, 'flat', 0.6 + Math.random()*0.3);
+
+  // Target: diagonal service box of receiver
+  const toLft = serveTargetLeft(who);
+  const xMin  = toLft ? CT.left+18 : CT.cx+12;
+  const xMax  = toLft ? CT.cx-12   : CT.right-18;
+  const tx    = xMin + Math.random()*(xMax-xMin);
+  const tz    = who===0 ? 0.24+Math.random()*0.20   // cpu's service box
+                        : 0.56+Math.random()*0.20;   // player's service box
+
+  shoot(who, tx, tz, 'flat', 0.55+Math.random()*0.30, true);
   servePending = false;
   hideMsg();
 }
@@ -175,477 +191,433 @@ function doServe(who) {
 // ── Players ────────────────────────────────────────────────────────────────
 let pl, cpu;
 function newPlayers() {
-  pl  = { wx: CT.cx, y: CT.bot - 44, spd: 5, state:'idle', charge:0, shotType:'flat' };
-  cpu = { wx: CT.cx, y: CT.top + 48, spd: 4, targetWx: CT.cx, shootTimer: 0 };
+  pl  = { wx:CT.cx, y:CT.bot-14, spd:5, state:'idle', charge:0, shotType:'flat' };
+  cpu = { wx:CT.cx, y:CT.top,    spd:4, targetWx:CT.cx, shootTimer:0 };
 }
 
 // ── Difficulty ─────────────────────────────────────────────────────────────
 const DIFFS = {
-  easy:   { spd:2.4, reaction:30, acc:0.50, miss:0.20, corner:0.10 },
-  normal: { spd:3.6, reaction:18, acc:0.76, miss:0.07, corner:0.30 },
-  hard:   { spd:4.8, reaction:9,  acc:0.94, miss:0.02, corner:0.55 }
+  easy:   {spd:2.4, reaction:28, acc:0.50, miss:0.20, corner:0.10},
+  normal: {spd:3.6, reaction:17, acc:0.76, miss:0.07, corner:0.30},
+  hard:   {spd:4.8, reaction:8,  acc:0.94, miss:0.02, corner:0.55}
 };
 
-// ── Award point ────────────────────────────────────────────────────────────
-let ptDelay = 0;
+// ── Scoring ────────────────────────────────────────────────────────────────
+let ptDelay=0;
 function awardPoint(winner) {
-  if (phase === 'point' || phase === 'result') return;
-  phase = 'point';
-  ptDelay = 90;
-  ball.inPlay = false;
-  showMsg(winner === 0 ? 'あなたのポイント！' : 'CPUのポイント！', 1500);
+  if (phase==='point'||phase==='result') return;
+  phase='point'; ptDelay=92;
+  ball.inPlay=false;
+  showMsg(winner===0?'あなたのポイント！':'CPUのポイント！', 1600);
+
+  // Alternate serve side each point
+  sc.serveSide = 1 - sc.serveSide;
 
   if (sc.tb) {
     sc.tbPts[winner]++;
-    const w = sc.tbPts[winner], l = sc.tbPts[1-winner];
-    if (w >= 7 && w - l >= 2) winSet(winner);
+    const w=sc.tbPts[winner], l=sc.tbPts[1-winner];
+    if (w>=7&&w-l>=2) winSet(winner);
     return;
   }
-
   sc.pts[winner]++;
-  const pw = sc.pts[winner], lo = sc.pts[1-winner];
-  if (pw >= 3 && lo >= 3) {
-    const d = pw - lo;
-    if      (d === 0) sc.adv = -1;
-    else if (d >= 2)  { winGame(winner); sc.pts=[0,0]; sc.adv=-1; }
-    else              sc.adv = winner;
-  } else if (pw >= 4) {
+  const pw=sc.pts[winner], lo=sc.pts[1-winner];
+  if (pw>=3&&lo>=3) {
+    const d=pw-lo;
+    if      (d===0) sc.adv=-1;
+    else if (d>=2)  { winGame(winner); sc.pts=[0,0]; sc.adv=-1; }
+    else            sc.adv=winner;
+  } else if (pw>=4) {
     winGame(winner); sc.pts=[0,0]; sc.adv=-1;
   }
 }
 
 function winGame(winner) {
   sc.games[winner]++;
-  sc.server = 1 - sc.server;
-  const gw = sc.games[winner], gl = sc.games[1-winner];
-  if      (gw >= 6 && gw - gl >= 2) winSet(winner);
-  else if (gw === 6 && gl === 6)    { sc.tb=true; sc.tbPts=[0,0]; }
+  sc.server   = 1-sc.server;
+  sc.serveSide = 0; // reset side at start of new game
+  const gw=sc.games[winner], gl=sc.games[1-winner];
+  if      (gw>=6&&gw-gl>=2) winSet(winner);
+  else if (gw===6&&gl===6)   { sc.tb=true; sc.tbPts=[0,0]; }
 }
 
 function winSet(winner) {
   sc.sets[winner]++;
   sc.games=[0,0]; sc.pts=[0,0]; sc.tb=false; sc.tbPts=[0,0]; sc.adv=-1;
-  if (sc.sets[winner] >= 2) { phase='result'; showResult(winner); }
+  sc.serveSide=0;
+  if (sc.sets[winner]>=2) { phase='result'; showResult(winner); }
 }
 
-// ── Ball physics ───────────────────────────────────────────────────────────
+// ── Ball physics ────────────────────────────────────────────────────────────
 function updateBall() {
   if (!ball.inPlay) return;
-
   ball.vh -= G;
   ball.h  += ball.vh;
   ball.wx += ball.vx;
   ball.z  += ball.vz;
 
-  // Bounce detection
-  if (ball.h <= 0 && ball.vh < 0) {
-    if (ball.bounced) {
-      // Second bounce → point to whoever last didn't hit (the side it bounced on belongs to)
-      awardPoint(ball.owner === 0 ? 1 : 0);
-      return;
-    }
-    // First bounce: check valid zone
-    const inX = ball.wx > CT.left - 15 && ball.wx < CT.right + 15;
-    const valid = (ball.owner === 0 && ball.z < 0.5 && inX) ||
-                  (ball.owner === 1 && ball.z > 0.5 && inX);
-    if (!valid) { awardPoint(ball.owner === 0 ? 1 : 0); return; }
+  // ── Bounce ────────────────────────────────────────────────────────────────
+  if (ball.h<=0 && ball.vh<0) {
+    if (ball.bounced) { awardPoint(ball.owner===0?1:0); return; } // 2nd bounce
 
+    const inX = ball.wx>=CT.left-18 && ball.wx<=CT.right+18;
+
+    if (ball.isServe) {
+      // サーブ: 対角サービスボックスに入ったか判定
+      const playerSrv = ball.owner===0;
+      const inSvcZ = playerSrv
+        ? (ball.z>=0.20 && ball.z<=0.49)   // CPU side service box
+        : (ball.z>=0.51 && ball.z<=0.80);  // Player side service box
+      const toLft  = serveTargetLeft(ball.owner);
+      const inBox  = toLft ? ball.wx<CT.cx : ball.wx>CT.cx;
+      if (!inX || !inSvcZ || !inBox) { awardPoint(ball.owner===0?1:0); return; }
+      ball.isServe = false; // valid → rally starts
+    } else {
+      // ラリー: 相手コートに入ったか
+      const valid = (ball.owner===0&&ball.z<0.5&&inX)||(ball.owner===1&&ball.z>0.5&&inX);
+      if (!valid) { awardPoint(ball.owner===0?1:0); return; }
+    }
+
+    // Valid bounce
     ball.h = 0;
-    const rest = ball.spin === 'topspin' ? 0.50
-               : ball.spin === 'slice'   ? 0.42
-               : 0.55;
-    ball.vh *= -rest;
-    if (ball.spin === 'topspin') ball.vz *= 1.10;
-    if (ball.spin === 'slice')   ball.vz *= 0.80;
+    ball.vh *= -(ball.spin==='topspin'?0.50:ball.spin==='slice'?0.42:0.55);
+    if (ball.spin==='topspin') ball.vz*=1.10;
+    if (ball.spin==='slice')   ball.vz*=0.80;
     ball.bounced = true;
   }
 
-  // Net collision (z passes 0.5)
-  const nearNet = (ball.vz < 0 && ball.z <= 0.5 && ball.z > 0.46) ||
-                  (ball.vz > 0 && ball.z >= 0.5 && ball.z < 0.54);
-  if (nearNet && ball.h < NET_H) { awardPoint(ball.owner === 0 ? 1 : 0); return; }
+  // ── Net collision ──────────────────────────────────────────────────────────
+  const thruNet=(ball.vz<0&&ball.z<=0.5&&ball.z>0.47)||(ball.vz>0&&ball.z>=0.5&&ball.z<0.53);
+  if (thruNet && ball.h<NET_H) { awardPoint(ball.owner===0?1:0); return; }
 
-  // Out of court
-  if (ball.z >  1.08) { awardPoint(1); return; }
-  if (ball.z < -0.08) { awardPoint(0); return; }
-  if (ball.bounced && (ball.wx < CT.left - 28 || ball.wx > CT.right + 28)) {
-    awardPoint(ball.owner === 0 ? 1 : 0); return;
+  // ── Out of court ───────────────────────────────────────────────────────────
+  if (ball.z>1.06) { awardPoint(1); return; }
+  if (ball.z<-0.06){ awardPoint(0); return; }
+  if (ball.bounced&&(ball.wx<CT.left-30||ball.wx>CT.right+30)) {
+    awardPoint(ball.owner===0?1:0); return;
   }
 }
 
-// ── CPU AI ─────────────────────────────────────────────────────────────────
+// ── CPU AI ──────────────────────────────────────────────────────────────────
 function updateCPU(dt) {
   const d = DIFFS[diff];
   cpu.spd = d.spd;
   if (!ball.inPlay) return;
 
-  // Predict landing x and move there
-  if (ball.vz < 0) {
-    const frames = ball.z / Math.max(0.001, Math.abs(ball.vz));
-    const pred   = ball.wx + ball.vx * frames * d.acc + (Math.random() - 0.5) * (1-d.acc) * 80;
+  // Predict x landing
+  if (ball.vz<0) {
+    const frames = ball.z/Math.max(0.001,Math.abs(ball.vz));
+    const pred   = ball.wx + ball.vx*frames*d.acc + (Math.random()-.5)*(1-d.acc)*70;
     cpu.targetWx = clamp(pred, CT.left+14, CT.right-14);
   } else {
     cpu.targetWx = CT.cx;
   }
-  const dx = cpu.targetWx - cpu.wx;
-  if (Math.abs(dx) > 1) cpu.wx += Math.sign(dx) * Math.min(Math.abs(dx), cpu.spd);
+  const dx=cpu.targetWx-cpu.wx;
+  if (Math.abs(dx)>1) cpu.wx+=Math.sign(dx)*Math.min(Math.abs(dx),cpu.spd);
 
-  // Hit ball when it's in CPU's zone and close enough
-  if (ball.inPlay && ball.owner === 0 && ball.z < 0.30 && ball.h < 0.28) {
-    const xDist = Math.abs(ball.wx - cpu.wx);
-    if (xDist < 90) {
-      cpu.shootTimer += (dt || 16);
-      if (cpu.shootTimer > d.reaction * 16) {
-        cpu.shootTimer = 0;
-        if (Math.random() < d.miss) { awardPoint(0); return; }
-        let tx = CT.cx + (Math.random() - 0.5) * 210;
-        if (Math.random() < d.corner) tx = Math.random() < 0.5 ? CT.left+18 : CT.right-18;
-        const spins = ['flat','topspin','slice'];
-        const sp = diff==='hard' ? spins[Math.floor(Math.random()*3)] : 'flat';
-        shoot(1, clamp(tx, CT.left+15, CT.right-15), 0.78, sp, 0.5+Math.random()*0.4);
+  // Hit ball
+  if (ball.inPlay&&ball.owner===0&&ball.z<0.32&&ball.h<0.30) {
+    if (Math.abs(ball.wx-cpu.wx)<100) {
+      cpu.shootTimer+=(dt||16);
+      if (cpu.shootTimer>d.reaction*16) {
+        cpu.shootTimer=0;
+        if (Math.random()<d.miss){ awardPoint(0); return; }
+        let tx=CT.cx+(Math.random()-.5)*220;
+        if (Math.random()<d.corner) tx=Math.random()<.5?CT.left+20:CT.right-20;
+        const spins=['flat','topspin','slice'];
+        const sp=diff==='hard'?spins[Math.floor(Math.random()*3)]:'flat';
+        shoot(1, clamp(tx,CT.left+15,CT.right-15), 0.78, sp, 0.5+Math.random()*0.4, false);
       }
     }
-  } else {
-    cpu.shootTimer = 0;
-  }
+  } else { cpu.shootTimer=0; }
 }
 
-// ── Input ───────────────────────────────────────────────────────────────────
-const keys = {};
-document.addEventListener('keydown', e => {
-  keys[e.code] = true;
-  if (phase !== 'playing') return;
-  if (e.code === 'Space') { e.preventDefault(); beginCharge(); }
-  if (e.code === 'KeyZ') pl.shotType = 'topspin';
-  if (e.code === 'KeyX') pl.shotType = 'slice';
-  if (e.code === 'KeyC') pl.shotType = 'lob';
+// ── Input ────────────────────────────────────────────────────────────────────
+const keys={};
+document.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(phase!=='playing') return;
+  if(e.code==='Space'){e.preventDefault();beginCharge();}
+  if(e.code==='KeyZ') pl.shotType='topspin';
+  if(e.code==='KeyX') pl.shotType='slice';
+  if(e.code==='KeyC') pl.shotType='lob';
 });
-document.addEventListener('keyup', e => {
-  keys[e.code] = false;
-  if (phase === 'playing' && e.code === 'Space') relShot();
+document.addEventListener('keyup',e=>{
+  keys[e.code]=false;
+  if(phase==='playing'&&e.code==='Space') relShot();
 });
 
-// Mouse
-const mouse = { down:false, x:0, sx:0, sy:0 };
-function toGame(clientX, clientY) {
-  const r = cv.getBoundingClientRect();
-  return { x:(clientX-r.left)/r.width*W, y:(clientY-r.top)/r.height*H };
+function toGame(cx2,cy2) {
+  const r=cv.getBoundingClientRect();
+  return {x:(cx2-r.left)/r.width*W, y:(cy2-r.top)/r.height*H};
 }
-cv.addEventListener('mousedown', e => {
-  const g = toGame(e.clientX, e.clientY);
-  mouse.x=g.x; mouse.sx=g.x; mouse.sy=g.y; mouse.down=true;
-  if (phase==='playing') beginCharge();
+const mouse={down:false,x:0,sx:0,sy:0};
+cv.addEventListener('mousedown',e=>{
+  const g=toGame(e.clientX,e.clientY);
+  mouse.x=g.x;mouse.sx=g.x;mouse.sy=g.y;mouse.down=true;
+  if(phase==='playing') beginCharge();
 });
-cv.addEventListener('mouseup', e => {
-  if (phase==='playing') {
-    const g = toGame(e.clientX, e.clientY);
-    const dy = g.y - mouse.sy;
-    if      (dy < -35) pl.shotType = 'lob';
-    else if (dy >  35) pl.shotType = 'slice';
+cv.addEventListener('mouseup',e=>{
+  if(phase==='playing'){
+    const g=toGame(e.clientX,e.clientY);
+    const dy=g.y-mouse.sy;
+    if(dy<-32) pl.shotType='lob';
+    else if(dy>32) pl.shotType='slice';
     relShot();
   }
-  mouse.down = false;
+  mouse.down=false;
 });
-cv.addEventListener('mousemove', e => {
-  if (!mouse.down || phase!=='playing') return;
-  const g = toGame(e.clientX, e.clientY);
-  pl.wx = clamp(pl.wx + (g.x - mouse.x) * 1.6, CT.left+14, CT.right-14);
-  mouse.x = g.x;
+cv.addEventListener('mousemove',e=>{
+  if(!mouse.down||phase!=='playing') return;
+  const g=toGame(e.clientX,e.clientY);
+  pl.wx=clamp(pl.wx+(g.x-mouse.x)*1.6,CT.left+14,CT.right-14);
+  mouse.x=g.x;
 });
-
-// Touch
-let touch = { x:0, sx:0, sy:0, y:0 };
-cv.addEventListener('touchstart', e => {
+let touch={x:0,sx:0,sy:0,y:0};
+cv.addEventListener('touchstart',e=>{
   e.preventDefault();
-  const g = toGame(e.touches[0].clientX, e.touches[0].clientY);
-  touch.x=g.x; touch.sx=g.x; touch.sy=g.y; touch.y=g.y;
-  if (phase==='playing') beginCharge();
-}, { passive:false });
-cv.addEventListener('touchmove', e => {
+  const g=toGame(e.touches[0].clientX,e.touches[0].clientY);
+  touch.x=g.x;touch.sx=g.x;touch.sy=g.y;touch.y=g.y;
+  if(phase==='playing') beginCharge();
+},{passive:false});
+cv.addEventListener('touchmove',e=>{
   e.preventDefault();
-  const g = toGame(e.touches[0].clientX, e.touches[0].clientY);
-  if (phase==='playing') pl.wx = clamp(pl.wx + (g.x - touch.x)*1.6, CT.left+14, CT.right-14);
-  touch.x=g.x; touch.y=g.y;
-}, { passive:false });
-cv.addEventListener('touchend', e => {
+  const g=toGame(e.touches[0].clientX,e.touches[0].clientY);
+  if(phase==='playing') pl.wx=clamp(pl.wx+(g.x-touch.x)*1.6,CT.left+14,CT.right-14);
+  touch.x=g.x;touch.y=g.y;
+},{passive:false});
+cv.addEventListener('touchend',e=>{
   e.preventDefault();
-  if (phase==='playing') {
-    const dy = touch.y - touch.sy;
-    if      (dy < -35) pl.shotType = 'lob';
-    else if (dy >  35) pl.shotType = 'slice';
+  if(phase==='playing'){
+    const dy=touch.y-touch.sy;
+    if(dy<-32) pl.shotType='lob';
+    else if(dy>32) pl.shotType='slice';
     relShot();
   }
-}, { passive:false });
+},{passive:false});
 
-function beginCharge() {
-  if (pl.state==='idle' || pl.state==='cool') {
-    pl.state='charge'; pl.charge=0; pl.shotType='flat';
-  }
+function beginCharge(){
+  if(pl.state==='idle'||pl.state==='cool'){pl.state='charge';pl.charge=0;pl.shotType='flat';}
 }
-function relShot() {
-  if (pl.state==='charge') pl.state='swing';
-}
+function relShot(){if(pl.state==='charge') pl.state='swing';}
 
-// ── Player update ───────────────────────────────────────────────────────────
-function updatePlayer() {
-  const s = pl.spd;
-  if (keys['ArrowLeft'])  pl.wx = clamp(pl.wx - s, CT.left+14, CT.right-14);
-  if (keys['ArrowRight']) pl.wx = clamp(pl.wx + s, CT.left+14, CT.right-14);
-  if (keys['ArrowUp'])    pl.y  = clamp(pl.y - s*0.7, CT.cx, CT.bot-20);
-  if (keys['ArrowDown'])  pl.y  = clamp(pl.y + s*0.7, CT.cx, CT.bot-20);
+// ── Player update ─────────────────────────────────────────────────────────────
+function updatePlayer(){
+  const spd=pl.spd;
+  if(keys['ArrowLeft'])  pl.wx=clamp(pl.wx-spd,CT.left+14,CT.right-14);
+  if(keys['ArrowRight']) pl.wx=clamp(pl.wx+spd,CT.left+14,CT.right-14);
+  if(keys['ArrowUp'])    pl.y=clamp(pl.y-spd*0.7, NET_SY+32, CT.bot-10);
+  if(keys['ArrowDown'])  pl.y=clamp(pl.y+spd*0.7, NET_SY+32, CT.bot-10);
 
-  if (pl.state === 'charge') {
+  if(pl.state==='charge'){
     pl.charge++;
-    if (pl.charge > 55) pl.state = 'swing';
+    if(pl.charge>55) pl.state='swing';
   }
-  if (pl.state === 'swing') {
-    if (!ball.inPlay && servePending && sc.server===0) {
+  if(pl.state==='swing'){
+    if(!ball.inPlay&&servePending&&sc.server===0){
       doServe(0);
-    } else if (ball.inPlay && ball.owner===1 && ball.z > 0.70 && ball.h < 0.35) {
-      if (Math.abs(ball.wx - pl.wx) < 95) {
-        const pwr  = Math.min(1, pl.charge/45);
-        const deep = pl.shotType==='lob' ? 0.06 : 0.18;
-        const tx   = CT.cx + (Math.random()-0.5)*190;
-        shoot(0, clamp(tx, CT.left+15, CT.right-15), deep, pl.shotType, pwr);
+    } else if(ball.inPlay&&ball.owner===1&&ball.z>0.62&&ball.h<0.38){
+      if(Math.abs(ball.wx-pl.wx)<115){
+        const pwr=Math.min(1,pl.charge/45);
+        const deep=pl.shotType==='lob'?0.07:0.18;
+        const tx=CT.cx+(Math.random()-.5)*200;
+        shoot(0,clamp(tx,CT.left+15,CT.right-15),deep,pl.shotType,pwr,false);
       }
     }
     pl.state='cool'; pl.charge=0;
-    setTimeout(() => { if(pl.state==='cool') pl.state='idle'; }, 360);
+    setTimeout(()=>{if(pl.state==='cool')pl.state='idle';},350);
   }
 }
 
-// ── Render ──────────────────────────────────────────────────────────────────
-function render() {
-  cx.clearRect(0, 0, W, H);
-  const bg = cx.createLinearGradient(0,0,0,H);
-  bg.addColorStop(0,'#0e2040'); bg.addColorStop(1,'#0d1b2a');
-  cx.fillStyle=bg; cx.fillRect(0,0,W,H);
-
+// ── Render ─────────────────────────────────────────────────────────────────────
+function render(){
+  cx.clearRect(0,0,W,H);
+  const bg=cx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0e2040');bg.addColorStop(1,'#0d1b2a');
+  cx.fillStyle=bg;cx.fillRect(0,0,W,H);
   drawScore();
   drawCourt();
-  if (ball.inPlay) drawBall();
-  drawActor(cpu, false);
-  drawActor(pl, true);
+  if(ball.inPlay) drawBall();
+  drawActor(cpu,false);
+  drawActor(pl,true);
   drawHint();
 }
 
-// ── Scoreboard ──────────────────────────────────────────────────────────────
-function drawScore() {
-  cx.fillStyle='rgba(0,10,30,.75)';
-  cx.fillRect(0,0,W,CT.top-4);
-
-  // Column layout: SET | GAME | POINT
-  const cols = [
-    { label:'SET',   x:8  },
-    { label:'GAME',  x:148},
-    { label:'POINT', x:270}
-  ];
-  cols.forEach(c => {
-    cx.fillStyle='#546e7a'; cx.font='bold 10px Arial'; cx.textAlign='left';
-    cx.fillText(c.label, c.x, 16);
+function drawScore(){
+  cx.fillStyle='rgba(0,8,28,.78)';cx.fillRect(0,0,W,CT.top-4);
+  cx.textAlign='left';
+  [{l:'SET',x:8},{l:'GAME',x:158},{l:'POINT',x:290}].forEach(c=>{
+    cx.fillStyle='#546e7a';cx.font='bold 10px Arial';cx.fillText(c.l,c.x,16);
   });
+  cx.font='bold 13px Arial';cx.fillStyle='#fff';
+  cx.fillText(`CPU ${sc.sets[1]}  あなた ${sc.sets[0]}`,8,37);
+  cx.fillText(`${sc.games[1]} - ${sc.games[0]}`,158,37);
 
-  cx.font='bold 13px Arial'; cx.fillStyle='#fff';
-  cx.fillText(`CPU ${sc.sets[1]}  あなた ${sc.sets[0]}`, 8, 36);
-  cx.fillText(`${sc.games[1]} - ${sc.games[0]}`, 148, 36);
-
-  // Points
-  let p0='', p1='';
-  if (sc.tb) {
-    p0=String(sc.tbPts[0]); p1=String(sc.tbPts[1]);
-  } else {
-    const w=sc.pts[0], l=sc.pts[1];
-    if (w>=3 && l>=3) {
-      if (sc.adv===-1)   { p0=p1='D'; }
-      else { p0=sc.adv===0?'A':'40'; p1=sc.adv===1?'A':'40'; }
-    } else {
-      p0=PL[Math.min(3,w)]; p1=PL[Math.min(3,l)];
-    }
+  let p0='',p1='';
+  if(sc.tb){p0=String(sc.tbPts[0]);p1=String(sc.tbPts[1]);}
+  else{
+    const w=sc.pts[0],l=sc.pts[1];
+    if(w>=3&&l>=3){ if(sc.adv===-1){p0=p1='D';}else{p0=sc.adv===0?'A':'40';p1=sc.adv===1?'A':'40';} }
+    else{p0=PL[Math.min(3,w)];p1=PL[Math.min(3,l)];}
   }
-  cx.fillText(`CPU ${p1}  あなた ${p0}`, 270, 36);
+  cx.fillText(`CPU ${p1}  あなた ${p0}`,290,37);
 
-  // Server / diff
-  cx.fillStyle='#ffd54f'; cx.font='bold 10px Arial'; cx.textAlign='right';
-  cx.fillText(sc.server===0?'▶ あなたのサーブ':'▶ CPUのサーブ', W-6, 22);
-  cx.fillStyle='rgba(255,255,255,.35)'; cx.font='10px Arial';
-  cx.fillText(diff.toUpperCase(), W-6, 38);
-  if (sc.tb) { cx.fillStyle='#ef9a9a'; cx.fillText('TIEBREAK', W-6, 52); }
+  cx.fillStyle='#ffd54f';cx.font='bold 10px Arial';cx.textAlign='right';
+  cx.fillText(sc.server===0?'▶ あなたのサーブ':'▶ CPUのサーブ',W-6,20);
+
+  // サーブボックス表示
+  const sideLabel=sc.serveSide===0?'右→デュースサイド':'左→アドサイド';
+  cx.fillStyle='rgba(255,255,255,.40)';cx.font='9px Arial';
+  cx.fillText(diff.toUpperCase()+'  '+sideLabel,W-6,35);
+  if(sc.tb){cx.fillStyle='#ef9a9a';cx.fillText('TIEBREAK',W-6,50);}
   cx.textAlign='left';
 }
 
-// ── Court ───────────────────────────────────────────────────────────────────
-function drawCourt() {
-  // Court surface
+function drawCourt(){
   cx.save();
+  // Court surface
+  const tl=proj(CT.left,0),tr=proj(CT.right,0),bl=proj(CT.left,1),br=proj(CT.right,1);
   cx.beginPath();
-  const tl=proj(CT.left,0), tr=proj(CT.right,0);
-  const bl=proj(CT.left,1), br=proj(CT.right,1);
-  cx.moveTo(bl.sx, bl.sy); cx.lineTo(br.sx, br.sy);
-  cx.lineTo(tr.sx, tr.sy); cx.lineTo(tl.sx, tl.sy);
-  cx.closePath();
+  cx.moveTo(bl.sx,bl.sy);cx.lineTo(br.sx,br.sy);
+  cx.lineTo(tr.sx,tr.sy);cx.lineTo(tl.sx,tl.sy);cx.closePath();
   const cg=cx.createLinearGradient(0,CT.top,0,CT.bot);
-  cg.addColorStop(0,'#185e35'); cg.addColorStop(1,'#1e7842');
-  cx.fillStyle=cg; cx.fill();
-  cx.strokeStyle='rgba(255,255,255,.8)'; cx.lineWidth=1.5; cx.stroke();
+  cg.addColorStop(0,'#195f36');cg.addColorStop(1,'#1e7843');
+  cx.fillStyle=cg;cx.fill();
+  cx.strokeStyle='rgba(255,255,255,.80)';cx.lineWidth=1.5;cx.stroke();
 
-  // Helper
-  const pline = (x1,z1,x2,z2,col,w)=>{
-    const a=proj(x1,z1), b=proj(x2,z2);
-    cx.strokeStyle=col; cx.lineWidth=w;
-    cx.beginPath(); cx.moveTo(a.sx,a.sy); cx.lineTo(b.sx,b.sy); cx.stroke();
+  const pline=(x1,z1,x2,z2,col,w)=>{
+    const a=proj(x1,z1),b=proj(x2,z2);
+    cx.strokeStyle=col;cx.lineWidth=w;cx.beginPath();cx.moveTo(a.sx,a.sy);cx.lineTo(b.sx,b.sy);cx.stroke();
   };
-  // Center lines
-  pline(CT.cx,0, CT.cx,.5, 'rgba(255,255,255,.5)', 1);
-  pline(CT.cx,.5, CT.cx,1, 'rgba(255,255,255,.5)', 1);
-  // Service lines
-  pline(CT.left,.25, CT.right,.25, 'rgba(255,255,255,.4)', 1);
-  pline(CT.left,.75, CT.right,.75, 'rgba(255,255,255,.4)', 1);
+  // Highlight target service box
+  if(phase==='playing'&&servePending&&sc.server===0){
+    const toLft=serveTargetLeft(0);
+    const bx1=toLft?CT.left:CT.cx, bx2=toLft?CT.cx:CT.right;
+    const p1=proj(bx1,0.20),p2=proj(bx2,0.20),p3=proj(bx2,0.50),p4=proj(bx1,0.50);
+    cx.save();cx.globalAlpha=0.22;cx.fillStyle='#ffd54f';
+    cx.beginPath();cx.moveTo(p1.sx,p1.sy);cx.lineTo(p2.sx,p2.sy);
+    cx.lineTo(p3.sx,p3.sy);cx.lineTo(p4.sx,p4.sy);cx.closePath();cx.fill();
+    cx.restore();
+  }
+
+  pline(CT.cx,0,CT.cx,.5,'rgba(255,255,255,.52)',1);
+  pline(CT.cx,.5,CT.cx,1,'rgba(255,255,255,.52)',1);
+  pline(CT.left,.25,CT.right,.25,'rgba(255,255,255,.40)',1);
+  pline(CT.left,.75,CT.right,.75,'rgba(255,255,255,.40)',1);
 
   // Net
-  const nL=proj(CT.left,.5), nR=proj(CT.right,.5);
-  const netBot = CT.top+(CT.bot-CT.top)*0.5;
-  const netTop = netBot - 18;
-  // net mesh
-  cx.strokeStyle='rgba(255,255,255,.28)'; cx.lineWidth=.8;
-  for (let i=0;i<=12;i++){
-    const nx=nL.sx+(nR.sx-nL.sx)*i/12;
-    cx.beginPath(); cx.moveTo(nx,netTop); cx.lineTo(nx+1,netBot); cx.stroke();
+  const nL=proj(CT.left,.5),nR=proj(CT.right,.5);
+  const netBot=NET_SY, netTop=netBot-18;
+  cx.strokeStyle='rgba(255,255,255,.25)';cx.lineWidth=.8;
+  for(let i=0;i<=14;i++){
+    const nx=nL.sx+(nR.sx-nL.sx)*i/14;
+    cx.beginPath();cx.moveTo(nx,netTop);cx.lineTo(nx+1,netBot);cx.stroke();
   }
-  cx.strokeStyle='#eceff1'; cx.lineWidth=2.5;
-  cx.beginPath(); cx.moveTo(nL.sx,netTop); cx.lineTo(nR.sx,netTop); cx.stroke();
-  cx.strokeStyle='rgba(255,255,255,.6)'; cx.lineWidth=1.5;
-  cx.beginPath(); cx.moveTo(nL.sx,netBot); cx.lineTo(nR.sx,netBot); cx.stroke();
+  cx.strokeStyle='#eceff1';cx.lineWidth=2.8;
+  cx.beginPath();cx.moveTo(nL.sx,netTop);cx.lineTo(nR.sx,netTop);cx.stroke();
+  cx.strokeStyle='rgba(255,255,255,.55)';cx.lineWidth=1.2;
+  cx.beginPath();cx.moveTo(nL.sx,netBot);cx.lineTo(nR.sx,netBot);cx.stroke();
   cx.restore();
 }
 
-// ── Ball ─────────────────────────────────────────────────────────────────────
-function drawBall() {
-  const { sx, groundY, by, scale } = ballScreen();
-  const r = 6 * scale;
-
-  // Ground shadow
+function drawBall(){
+  const{sx,groundY,by,scale}=ballScreen();
+  const r=6*scale;
   cx.save();
-  cx.globalAlpha = Math.max(0, 0.45 - ball.h*0.35) * scale;
-  cx.fillStyle='#000';
-  cx.beginPath(); cx.ellipse(sx, groundY, r*1.6, r*0.55, 0,0,Math.PI*2); cx.fill();
+  cx.globalAlpha=Math.max(0,.45-ball.h*.35)*scale;cx.fillStyle='#000';
+  cx.beginPath();cx.ellipse(sx,groundY,r*1.6,r*.55,0,0,Math.PI*2);cx.fill();
+  cx.globalAlpha=1;
+  const gr=cx.createRadialGradient(sx-r*.3,by-r*.3,r*.1,sx,by,r);
+  gr.addColorStop(0,'#fff9c4');gr.addColorStop(1,'#c6b300');
+  cx.fillStyle=gr;cx.beginPath();cx.arc(sx,by,r,0,Math.PI*2);cx.fill();
   cx.restore();
-
-  // Ball
-  const gr=cx.createRadialGradient(sx-r*.3, by-r*.3, r*.1, sx, by, r);
-  gr.addColorStop(0,'#fff9c4'); gr.addColorStop(1,'#c6b300');
-  cx.fillStyle=gr;
-  cx.beginPath(); cx.arc(sx, by, r, 0, Math.PI*2); cx.fill();
 }
 
-// ── Actor (player / CPU) ────────────────────────────────────────────────────
-function drawActor(p, isPlayer) {
-  const z = isPlayer ? 1.0 : 0.0;
-  const { sx } = proj(p.wx, z);
-  const sy = p.y;
-  const sc2 = isPlayer ? 1.0 : 0.68;
+function drawActor(p, isPlayer){
+  const z=isPlayer?1.0:0.0;
+  const{sx}=proj(p.wx,z);
+  // プレイヤーはp.y(ベースライン可動)、CPUはCT.top固定
+  const sy=isPlayer?p.y:CT.top;
+  const sc2=isPlayer?1.0:0.68;
+  cx.save();cx.translate(sx,sy);cx.scale(sc2,sc2);
 
-  cx.save(); cx.translate(sx, sy); cx.scale(sc2, sc2);
+  // 足を sy=0 (ベースライン) に合わせ、体は上に描く
+  cx.globalAlpha=.25;cx.fillStyle='#000';
+  cx.beginPath();cx.ellipse(0,-1,12,4,0,0,Math.PI*2);cx.fill();cx.globalAlpha=1;
 
-  // Shadow
-  cx.globalAlpha=.25; cx.fillStyle='#000';
-  cx.beginPath(); cx.ellipse(0,12,12,4,0,0,Math.PI*2); cx.fill(); cx.globalAlpha=1;
-
-  // Legs
   cx.fillStyle=isPlayer?'#e0e0e0':'#ccc';
-  cx.fillRect(-5, 0, 4, 14); cx.fillRect(1, 0, 4, 14);
-  // Body
+  cx.fillRect(-5,-14,4,14);cx.fillRect(1,-14,4,14); // legs
   cx.fillStyle=isPlayer?'#1565c0':'#c62828';
-  cx.fillRect(-8,-18,16,20);
-  // Head
+  cx.fillRect(-8,-32,16,20); // body
   cx.fillStyle='#ffcc80';
-  cx.beginPath(); cx.arc(0,-24,8,0,Math.PI*2); cx.fill();
-  // Hair
+  cx.beginPath();cx.arc(0,-38,8,0,Math.PI*2);cx.fill(); // head
   cx.fillStyle=isPlayer?'#4e342e':'#212121';
-  cx.beginPath(); cx.arc(0,-24,8,Math.PI,0); cx.fill();
-  // Racket
-  const ang = isPlayer && p.state==='swing' ? -0.85 : 0.25;
-  cx.save(); cx.rotate(ang);
-  cx.strokeStyle='#6d4c41'; cx.lineWidth=2;
-  cx.beginPath(); cx.moveTo(8,-8); cx.lineTo(20,-20); cx.stroke();
-  cx.strokeStyle=isPlayer?'#90caf9':'#ef9a9a'; cx.lineWidth=1.5;
-  cx.strokeRect(18,-28,10,14);
+  cx.beginPath();cx.arc(0,-38,8,Math.PI,0);cx.fill(); // hair
+
+  const ang=isPlayer&&p.state==='swing'?-0.85:0.25;
+  cx.save();cx.rotate(ang);
+  cx.strokeStyle='#6d4c41';cx.lineWidth=2;
+  cx.beginPath();cx.moveTo(8,-22);cx.lineTo(20,-34);cx.stroke();
+  cx.strokeStyle=isPlayer?'#90caf9':'#ef9a9a';cx.lineWidth=1.5;
+  cx.strokeRect(18,-42,10,14);
   cx.restore();
 
-  // Charge bar
-  if (isPlayer && p.state==='charge') {
-    const pct=Math.min(1, p.charge/45);
+  if(isPlayer&&p.state==='charge'){
+    const pct=Math.min(1,p.charge/45);
     cx.fillStyle=`hsl(${120-pct*120},100%,55%)`;
-    cx.fillRect(-12,-36,24*pct,5);
-    cx.strokeStyle='rgba(255,255,255,.5)'; cx.lineWidth=1;
-    cx.strokeRect(-12,-36,24,5);
+    cx.fillRect(-12,-50,24*pct,5);
+    cx.strokeStyle='rgba(255,255,255,.5)';cx.lineWidth=1;cx.strokeRect(-12,-50,24,5);
   }
   cx.restore();
 }
 
-// ── Hint ─────────────────────────────────────────────────────────────────────
-function drawHint() {
-  if (phase !== 'playing') return;
-  const hints = [
-    '← → ↑ ↓ / ドラッグ: 移動',
-    'SPACE / タップ: ショット',
-    'Z: トップスピン  X: スライス  C: ロブ'
-  ];
-  cx.fillStyle='rgba(255,255,255,.38)'; cx.font='9px Arial'; cx.textAlign='center';
-  hints.forEach((t,i) => cx.fillText(t, W/2, CT.bot + 18 + i*13));
+function drawHint(){
+  if(phase!=='playing') return;
+  cx.fillStyle='rgba(255,255,255,.36)';cx.font='9px Arial';cx.textAlign='center';
+  cx.fillText('← → ↑ ↓ / ドラッグ: 移動',W/2,CT.bot+18);
+  cx.fillText('SPACE / タップ: ショット  |  Z: トップスピン  X: スライス  C: ロブ',W/2,CT.bot+32);
   cx.textAlign='left';
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 let msgTmr=null;
-function showMsg(t, ms) {
+function showMsg(t,ms){
   const el=document.getElementById('msg');
-  el.textContent=t; el.classList.add('on');
+  el.textContent=t;el.classList.add('on');
   clearTimeout(msgTmr);
-  if (ms < 99999) msgTmr=setTimeout(()=>el.classList.remove('on'), ms);
+  if(ms<99999) msgTmr=setTimeout(()=>el.classList.remove('on'),ms);
 }
-function hideMsg() {
-  clearTimeout(msgTmr);
-  document.getElementById('msg').classList.remove('on');
-}
+function hideMsg(){clearTimeout(msgTmr);document.getElementById('msg').classList.remove('on');}
 
 // ── Game loop ──────────────────────────────────────────────────────────────────
 let last=0;
-function loop(ts) {
-  const dt = Math.min(ts-last, 50); last=ts;
-
-  if (phase === 'playing') {
+function loop(ts){
+  const dt=Math.min(ts-last,50);last=ts;
+  if(phase==='playing'){
     updatePlayer();
     updateBall();
     updateCPU(dt);
-    if (servePending && sc.server===1) {
-      serveTimer--;
-      if (serveTimer <= 0) doServe(1);
-    }
+    if(servePending&&sc.server===1){serveTimer--;if(serveTimer<=0)doServe(1);}
     render();
-  } else if (phase === 'point') {
-    ptDelay--;
-    render();
-    if (ptDelay <= 0 && phase==='point') {
-      phase='playing';
-      prepareServe();
-    }
+  } else if(phase==='point'){
+    ptDelay--;render();
+    if(ptDelay<=0&&phase==='point'){phase='playing';prepareServe();}
   } else {
-    render(); // title/result: draw static frame
+    render();
   }
-  raf = requestAnimationFrame(loop);
+  raf=requestAnimationFrame(loop);
 }
 
 // ── Screens ────────────────────────────────────────────────────────────────────
-function showTitle() {
+function showTitle(){
   phase='title';
   document.getElementById('ov').style.display='flex';
   document.getElementById('oc').innerHTML=
     `<button class="btn" onclick="showDiff()">ゲームスタート</button>`;
 }
-function showDiff() {
+function showDiff(){
   phase='diff';
   document.getElementById('oc').innerHTML=`
-    <div style="color:#90caf9;font-size:clamp(11px,3.5vw,16px);margin-bottom:12px">難易度を選択</div>
+    <div style="color:#90caf9;font-size:clamp(10px,3.2vw,15px);margin-bottom:10px">難易度を選択</div>
     <div class="dbg">
       <button class="btn${diff==='easy'?' sel':''}"   onclick="setDiff('easy')">EASY</button>
       <button class="btn${diff==='normal'?' sel':''}" onclick="setDiff('normal')">NORMAL</button>
@@ -653,34 +625,32 @@ function showDiff() {
     </div>
     <button class="btn" onclick="startGame()" style="margin-top:8px">スタート！</button>`;
 }
-function setDiff(d) { diff=d; showDiff(); }
-function startGame() {
+function setDiff(d){diff=d;showDiff();}
+function startGame(){
   document.getElementById('ov').style.display='none';
-  newScore(); newPlayers();
+  newScore();newPlayers();
   phase='playing';
   prepareServe();
-  if (!raf) raf=requestAnimationFrame(loop);
+  if(!raf) raf=requestAnimationFrame(loop);
 }
-function showResult(winner) {
+function showResult(winner){
   document.getElementById('ov').style.display='flex';
-  const t = winner===0 ? '🏆 あなたの勝ち！' : '😓 CPUの勝ち…';
+  const t=winner===0?'🏆 あなたの勝ち！':'😓 CPUの勝ち…';
   document.getElementById('oc').innerHTML=`
-    <div style="font-size:clamp(18px,7vw,36px);margin-bottom:12px">${t}</div>
-    <div style="color:#90caf9;margin-bottom:20px">
+    <div style="font-size:clamp(16px,6vw,34px);margin-bottom:10px">${t}</div>
+    <div style="color:#90caf9;margin-bottom:18px">
       あなた ${sc.sets[0]} セット - CPU ${sc.sets[1]} セット
     </div>
     <button class="btn" onclick="startGame()">もう一度</button>
     <button class="btn" onclick="showTitle()">タイトルへ</button>`;
 }
 
-// ── Utils ──────────────────────────────────────────────────────────────────────
-function clamp(v,lo,hi) { return Math.max(lo,Math.min(hi,v)); }
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
-newScore(); newPlayers(); newBall();
-render();
-showTitle();
-raf = requestAnimationFrame(loop);
+newScore();newPlayers();newBall();
+render();showTitle();
+raf=requestAnimationFrame(loop);
 </script>
 </body>
 </html>
