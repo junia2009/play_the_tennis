@@ -446,7 +446,7 @@ function updateBall() {
   if (ball.z >  1.08) { awardPoint(ball.bounced ? ball.owner : 1 - ball.owner); return; }
   if (ball.z < -0.08) { awardPoint(ball.bounced ? ball.owner : 1 - ball.owner); return; }
   if (ball.bounced && (ball.wx < CT.left - 30 || ball.wx > CT.right + 30)) {
-    awardPoint(1 - ball.owner); return;
+    awardPoint(ball.owner); return;
   }
 }
 
