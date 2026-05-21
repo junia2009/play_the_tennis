@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Tennis Web Game</title>
 <link rel="manifest" href="/play_the_tennis/manifest.json">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%232e7d32'/%3E%3Ccircle cx='90' cy='90' r='56' fill='%23dfff5e' stroke='%23fff' stroke-width='4'/%3E%3Cpath d='M40 90 Q90 56 140 90' fill='none' stroke='%23fff' stroke-width='4'/%3E%3Cpath d='M40 90 Q90 124 140 90' fill='none' stroke='%23fff' stroke-width='4'/%3E%3C/svg%3E">
 <meta name="theme-color" content="#2e7d32">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -307,7 +308,11 @@ function awardPoint(winner) {
   if (sc.tb) {
     sc.tbPts[winner]++;
     const w = sc.tbPts[winner], l = sc.tbPts[1-winner];
-    if (w >= 7 && w - l >= 2) winSet(winner);
+    if (w >= 7 && w - l >= 2) { winSet(winner); return; }
+    // タイブレーク中のサーバー交代: 1点目→交代、以降2点ごとに交代
+    // (= 累積ポイントが奇数になったタイミングで交代)
+    const total = sc.tbPts[0] + sc.tbPts[1];
+    if (total % 2 === 1) sc.server = 1 - sc.server;
     return;
   }
 
@@ -336,18 +341,24 @@ function winGame(winner) {
   if (gw >= 6 && gw - gl >= 2) {
     winSet(winner);
   } else if (gw === 6 && gl === 6) {
-    sc.tb    = true;
-    sc.tbPts = [0, 0];
+    sc.tb            = true;
+    sc.tbPts         = [0, 0];
+    sc.tbStartServer = sc.server; // TB勝者後の新セットのサーバー反転用
   }
 }
 
 function winSet(winner) {
   sc.sets[winner]++;
+  // TBで終わった場合: 新セットのサーバーはTB開始時のサーバーの相手
+  if (sc.tb && sc.tbStartServer !== undefined) {
+    sc.server = 1 - sc.tbStartServer;
+  }
   sc.games = [0, 0];
   sc.pts   = [0, 0];
   sc.adv   = -1;
   sc.tb    = false;
   sc.tbPts = [0, 0];
+  sc.tbStartServer = undefined;
   sc.serveSide = 0;
   if (sc.sets[winner] >= 2) {
     phase = 'result';
@@ -490,7 +501,11 @@ function updateCPU(dt) {
   cpu.spd = d.spd;
 
   // Determine target position based on ball state
-  if (ball.inPlay && ball.owner === 0) {
+  if (servePending && sc.server === 1) {
+    // CPU is about to serve: keep the serve stance set by prepareServe
+    cpu.targetWx = cpu.wx;
+    cpu.targetY  = cpu.y;
+  } else if (ball.inPlay && ball.owner === 0) {
     // Ball coming toward CPU: predict bounce and position to receive
     const pred = predictBounce();
     if (pred && pred.z >= -0.05 && pred.z < 0.48) {
@@ -714,7 +729,11 @@ function updatePlayer() {
       }
     }
     pl.state = 'cool';
-    setTimeout(() => { if (pl.state === 'cool') pl.state = 'idle'; }, 350);
+    if (pl.coolTimer) clearTimeout(pl.coolTimer);
+    pl.coolTimer = setTimeout(() => {
+      if (pl.state === 'cool') pl.state = 'idle';
+      pl.coolTimer = null;
+    }, 350);
   }
 }
 
