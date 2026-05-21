@@ -44,8 +44,10 @@ export async function init(stageEl) {
   scene.background = new THREE.Color(0x0a141e);
   scene.fog = new THREE.Fog(0x0a141e, 30, 70);
 
-  camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
-  camera.position.set(0, 7.5, 19);
+  const aspect0 = window.innerWidth / window.innerHeight;
+  const fov0 = aspect0 < 0.8 ? 62 : 48;
+  camera = new THREE.PerspectiveCamera(fov0, aspect0, 0.1, 200);
+  camera.position.set(0, 8.5, 19);
   camera.lookAt(0, 1, -2);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -74,7 +76,9 @@ export async function init(stageEl) {
 }
 
 function onResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  const aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = aspect;
+  camera.fov    = aspect < 0.8 ? 62 : 48;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
