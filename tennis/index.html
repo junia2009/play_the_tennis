@@ -55,7 +55,7 @@ canvas{display:block;touch-action:none;background:#0d1b2a}
 <script>
 'use strict';
 
-const VERSION = 'v1.0.1';
+const VERSION = 'v1.0.2';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  CANVAS & LAYOUT
@@ -362,7 +362,7 @@ function winSet(winner) {
   sc.tbPts = [0, 0];
   sc.tbStartServer = undefined;
   sc.serveSide = 0;
-  if (sc.sets[winner] >= 2) {
+  if (sc.sets[winner] >= 1) {
     phase = 'result';
     showResult(winner);
   }
@@ -832,7 +832,7 @@ function drawScore() {
   });
 
   ctx.font = 'bold 13px Arial'; ctx.fillStyle = '#fff';
-  ctx.fillText(`CPU ${sc.sets[1]}  あなた ${sc.sets[0]}`, 8, 36);
+  ctx.fillText('1 SET MATCH', 8, 36);
   ctx.fillText(`${sc.games[1]} - ${sc.games[0]}`, 150, 36);
 
   // ポイント表示
