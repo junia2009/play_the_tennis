@@ -55,6 +55,8 @@ canvas{display:block;touch-action:none;background:#0d1b2a}
 <script>
 'use strict';
 
+const VERSION = 'v1.0.1';
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  CANVAS & LAYOUT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1124,7 +1126,8 @@ function showTitle() {
   phase = 'title';
   document.getElementById('ov').style.display = 'flex';
   document.getElementById('oc').innerHTML =
-    `<button class="btn" onclick="showDiff()">ゲームスタート</button>`;
+    `<button class="btn" onclick="showDiff()">ゲームスタート</button>
+     <div style="margin-top:14px;color:rgba(255,255,255,.35);font-size:11px;letter-spacing:.5px">${VERSION}</div>`;
 }
 function showDiff() {
   phase = 'diff';
