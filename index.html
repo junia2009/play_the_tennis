@@ -55,7 +55,7 @@ canvas{display:block;touch-action:none;background:#0d1b2a}
 <script>
 'use strict';
 
-const VERSION = 'v1.0.2';
+const VERSION = 'v1.0.3';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  CANVAS & LAYOUT
@@ -160,6 +160,15 @@ function newBall() {
     netTouched: false,   // レット判定用
     owner:      sc.server
   };
+}
+
+// ヒットエフェクト & ボールトレイル
+let hitEffect = null;                  // { x, y, r, alpha }
+const TRAIL_MAX = 8;
+const ballTrail = [];                  // [{ sx, by }, ...]
+
+function triggerHitEffect(sx, by) {
+  hitEffect = { x: sx, y: by, r: 6, alpha: 1.0 };
 }
 
 function bScreen() {
@@ -720,14 +729,31 @@ function updatePlayer() {
     else if (ball.inPlay && ball.owner === 1 && ball.z > 0.50 && ball.h < 0.55) {
       const plZ = (pl.y - CT.top) / (CT.bot - CT.top);
       if (Math.abs(ball.z - plZ) < 0.18 && Math.abs(ball.wx - pl.wx) < 90) {
-        // Fixed power per shot type (no charging)
-        const pwr  = pl.shotType === 'topspin' ? 0.85
-                   : pl.shotType === 'slice'   ? 0.55
-                   : pl.shotType === 'lob'     ? 0.40
-                   : 0.75; // flat
-        const deep = pl.shotType === 'lob' ? 0.06 : 0.07 + Math.random() * 0.18;
-        const tx   = CT.cx + (Math.random() - 0.5) * 210;
-        shoot(0, clamp(tx, CT.left+15, CT.right-15), deep, pl.shotType, pwr, false);
+        const pwr = pl.shotType === 'topspin' ? 0.85
+                  : pl.shotType === 'slice'   ? 0.55
+                  : pl.shotType === 'lob'     ? 0.40
+                  : 0.75;
+
+        // スティック X → 左右狙い / Y → 深浅狙い
+        const nx = STICK.active ? clamp(STICK.dx / STICK.maxOffset, -1, 1)
+                 : keys['ArrowLeft'] ? -0.7 : keys['ArrowRight'] ? 0.7 : 0;
+        const ny = STICK.active ? clamp(STICK.dy / STICK.maxOffset, -1, 1) : 0;
+
+        const aimRange = CT.right - CT.cx - 20; // ±172px
+        const tx = clamp(CT.cx + nx * aimRange, CT.left + 15, CT.right - 15);
+
+        // 深さ: ショット種別ベース + スティックY微調整 (上=深い, 下=浅い)
+        const baseDeep = pl.shotType === 'lob'     ? 0.06
+                       : pl.shotType === 'topspin'  ? 0.07 + Math.random() * 0.10
+                       : pl.shotType === 'slice'    ? 0.15 + Math.random() * 0.08
+                       :                             0.10 + Math.random() * 0.10;
+        const deep = clamp(baseDeep - ny * 0.08, 0.05, 0.26);
+
+        // ヒットエフェクト
+        const bs = bScreen();
+        triggerHitEffect(bs.sx, bs.by);
+
+        shoot(0, tx, deep, pl.shotType, pwr, false);
       }
     }
     pl.state = 'cool';
@@ -751,7 +777,9 @@ function render() {
 
   drawScore();
   drawCourt();
-  if (ball.inPlay) drawBall();
+  if (phase === 'playing') drawAimIndicator();
+  if (ball.inPlay) { drawBallTrail(); drawBall(); }
+  if (hitEffect) drawHitEffect();
   if (tossBall.active) drawTossBall();
   drawActor(cpu, false);
   drawActor(pl,  true);
@@ -966,6 +994,68 @@ function drawBall() {
   ctx.beginPath(); ctx.arc(sx, by, r, 0, Math.PI*2); ctx.fill();
 }
 
+// ── ボールトレイル ────────────────────────────────────────────
+function drawBallTrail() {
+  const len = ballTrail.length;
+  for (let i = 0; i < len; i++) {
+    const t = ballTrail[i];
+    const frac = i / TRAIL_MAX;           // 0 = 最新, 1 = 最古
+    ctx.globalAlpha = (1 - frac) * 0.30;
+    ctx.fillStyle = '#ffe57f';
+    ctx.beginPath();
+    ctx.arc(t.sx, t.by, Math.max(1.5, 5 * (1 - frac)), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── ヒットエフェクト ──────────────────────────────────────────
+function drawHitEffect() {
+  if (!hitEffect) return;
+  const { x, y, r, alpha } = hitEffect;
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.9;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  // 放射状ライン
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 6; i++) {
+    const ang = i * Math.PI / 3;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(ang) * r * 0.6, y + Math.sin(ang) * r * 0.6);
+    ctx.lineTo(x + Math.cos(ang) * r * 1.5, y + Math.sin(ang) * r * 1.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── 狙いカーソル (CPU コート側に着弾予測を表示) ───────────────
+function drawAimIndicator() {
+  if (!ball.inPlay || ball.owner !== 1 || ball.z <= 0.50) return;
+  const nx = STICK.active ? clamp(STICK.dx / STICK.maxOffset, -1, 1)
+           : keys['ArrowLeft'] ? -0.7 : keys['ArrowRight'] ? 0.7 : 0;
+  const ny = STICK.active ? clamp(STICK.dy / STICK.maxOffset, -1, 1) : 0;
+
+  const aimRange = CT.right - CT.cx - 20;
+  const tx = clamp(CT.cx + nx * aimRange, CT.left + 15, CT.right - 15);
+  const baseDeep = pl.shotType === 'lob' ? 0.06 : 0.12;
+  const tz = clamp(baseDeep - ny * 0.08, 0.05, 0.26);
+
+  const { sx, sy } = proj(tx, tz);
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = '#ffd54f';
+  ctx.lineWidth = 1.5;
+  const s = 7;
+  ctx.beginPath();
+  ctx.moveTo(sx - s, sy); ctx.lineTo(sx + s, sy);
+  ctx.moveTo(sx, sy - s * 0.7); ctx.lineTo(sx, sy + s * 0.7);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
 // ── トスボール描画 ────────────────────────────────────────────
 function drawTossBall() {
   const { sx } = proj(tossBall.wx, 1.0);
@@ -1064,6 +1154,20 @@ function loop(ts) {
     }
     updateBall();
     updateCPU(dt);
+    // ボールトレイル更新
+    if (ball.inPlay) {
+      const bs = bScreen();
+      ballTrail.unshift({ sx: bs.sx, by: bs.by });
+      if (ballTrail.length > TRAIL_MAX) ballTrail.pop();
+    } else if (ballTrail.length) {
+      ballTrail.length = 0;
+    }
+    // ヒットエフェクト更新
+    if (hitEffect) {
+      hitEffect.r  += 5;
+      hitEffect.alpha -= 0.09;
+      if (hitEffect.alpha <= 0) hitEffect = null;
+    }
     // CPU自動サーブ
     if (servePending && sc.server === 1) {
       serveTimer--;
