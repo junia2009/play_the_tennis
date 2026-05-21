@@ -1,43 +1,54 @@
 // ─── バージョンここだけ変える ────────────────────────────────────
-const CACHE = 'tennis-v1.0.3';
+const CACHE = 'tennis-v2.0.0';
 // ─────────────────────────────────────────────────────────────────
 
-const ASSETS = [
+const LOCAL_ASSETS = [
   '/play_the_tennis/',
   '/play_the_tennis/index.html',
   '/play_the_tennis/manifest.json',
-  '/play_the_tennis/sw.js'
+  '/play_the_tennis/sw.js',
+  '/play_the_tennis/js/main.js',
+  '/play_the_tennis/js/game.js',
+  '/play_the_tennis/js/render3d.js',
+  '/play_the_tennis/js/input.js',
+  '/play_the_tennis/js/ui.js',
+  '/play_the_tennis/assets/player.glb'
 ];
 
-// ① 新 SW インストール時: キャッシュを作り即座に waiting をスキップ
+// CDN modules — pre-fetch best-effort but tolerate failures
+const CDN_ASSETS = [
+  'https://unpkg.com/three@0.169.0/build/three.module.js',
+  'https://unpkg.com/three@0.169.0/examples/jsm/loaders/GLTFLoader.js',
+  'https://unpkg.com/three@0.169.0/examples/jsm/utils/SkeletonUtils.js',
+  'https://unpkg.com/three@0.169.0/examples/jsm/utils/BufferGeometryUtils.js'
+];
+
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE)
-      .then(c => c.addAll(ASSETS))
-      .then(() => self.skipWaiting())  // waiting をスキップして即 active へ
+    caches.open(CACHE).then(async (c) => {
+      // Local: must succeed
+      await c.addAll(LOCAL_ASSETS);
+      // CDN: best-effort
+      await Promise.allSettled(CDN_ASSETS.map(u =>
+        fetch(u).then(r => r.ok ? c.put(u, r) : null).catch(() => null)
+      ));
+      return self.skipWaiting();
+    })
   );
 });
 
-// ② activate 時: 旧バージョンのキャッシュを全削除 → 既存タブを掌握 → 更新通知
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys =>
-        Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-      )
-      .then(() => self.clients.claim())   // 既存タブのコントロールを奪取
-      .then(() => {
-        // 全タブに「新バージョンになったのでリロードして」と通知
-        return self.clients.matchAll({ type: 'window' }).then(clients => {
-          clients.forEach(client => client.postMessage({ type: 'SW_UPDATED', version: CACHE }));
-        });
-      })
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window' }).then(clients => {
+        clients.forEach(c => c.postMessage({ type: 'SW_UPDATED', version: CACHE }));
+      }))
   );
 });
 
-// ③ fetch: キャッシュ優先 + バックグラウンドで最新を更新 (stale-while-revalidate)
 self.addEventListener('fetch', e => {
-  // chrome-extension や POST などはスルー
   if (!e.request.url.startsWith('http')) return;
   if (e.request.method !== 'GET') return;
 
@@ -50,7 +61,6 @@ self.addEventListener('fetch', e => {
         }
         return res;
       }).catch(() => null);
-
       return cached || fetchPromise;
     })
   );
