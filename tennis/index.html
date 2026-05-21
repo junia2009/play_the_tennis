@@ -1172,6 +1172,18 @@ raf = requestAnimationFrame(loop);
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/play_the_tennis/sw.js').catch(() => {});
+
+  // 新 SW が activate して controller が切り替わったら即リロード
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
+
+  // SW 側から postMessage で通知が来た場合もリロード (念のため二重対応)
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.type === 'SW_UPDATED') {
+      window.location.reload();
+    }
+  });
 }
 </script>
 </body>
