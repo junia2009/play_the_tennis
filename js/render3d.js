@@ -5,7 +5,7 @@
 
 import * as THREE from './lib/three.module.js';
 import { GLTFLoader } from './lib/loaders/GLTFLoader.js';
-import { SkeletonUtils } from './lib/utils/SkeletonUtils.js';
+import { clone as skeletonClone } from './lib/utils/SkeletonUtils.js';
 
 import { state, CT, SVC_Z_CPU, SVC_Z_PLY, input, clamp } from './game.js';
 
@@ -306,7 +306,7 @@ async function buildCharacters() {
 }
 
 function makeCharFromGltf(gltf, tintHex) {
-  const clone = SkeletonUtils.clone(gltf.scene);
+  const clone = skeletonClone(gltf.scene);
   const root = new THREE.Group();
   root.add(clone);
 
