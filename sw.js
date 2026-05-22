@@ -1,5 +1,5 @@
 // ─── バージョンここだけ変える ────────────────────────────────────
-const CACHE = 'tennis-v2.0.1';
+const CACHE = 'tennis-v2.1.0';
 // ─────────────────────────────────────────────────────────────────
 
 const LOCAL_ASSETS = [
@@ -12,26 +12,17 @@ const LOCAL_ASSETS = [
   '/play_the_tennis/js/render3d.js',
   '/play_the_tennis/js/input.js',
   '/play_the_tennis/js/ui.js',
-  '/play_the_tennis/assets/player.glb'
-];
-
-// CDN modules — pre-fetch best-effort but tolerate failures
-const CDN_ASSETS = [
-  'https://unpkg.com/three@0.169.0/build/three.module.js',
-  'https://unpkg.com/three@0.169.0/examples/jsm/loaders/GLTFLoader.js',
-  'https://unpkg.com/three@0.169.0/examples/jsm/utils/SkeletonUtils.js',
-  'https://unpkg.com/three@0.169.0/examples/jsm/utils/BufferGeometryUtils.js'
+  '/play_the_tennis/assets/player.glb',
+  '/play_the_tennis/js/lib/three.module.js',
+  '/play_the_tennis/js/lib/loaders/GLTFLoader.js',
+  '/play_the_tennis/js/lib/utils/SkeletonUtils.js',
+  '/play_the_tennis/js/lib/utils/BufferGeometryUtils.js'
 ];
 
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(async (c) => {
-      // Local: must succeed
       await c.addAll(LOCAL_ASSETS);
-      // CDN: best-effort
-      await Promise.allSettled(CDN_ASSETS.map(u =>
-        fetch(u).then(r => r.ok ? c.put(u, r) : null).catch(() => null)
-      ));
       return self.skipWaiting();
     })
   );
