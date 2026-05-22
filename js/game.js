@@ -8,7 +8,7 @@
 //  Rendering layer maps these to 3D world space.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export const VERSION = 'v2.1.4';
+export const VERSION = 'v2.1.5';
 
 export const CT = { left: 18, right: 402, cx: 210 };
 export const SVC_Z_CPU = 0.27;
@@ -387,8 +387,9 @@ function updatePlayer() {
     const nx = clamp(input.stickDx, -1, 1);
     const ny = clamp(input.stickDy, -1, 1);
     p.wx = clamp(p.wx + nx * s, CT.left + 14, CT.right - 14);
-    if (!state.servePending) {
-      // Constrain Y between net side and slightly past baseline
+    if (state.servePending) {
+      p.y = clamp(p.y + ny * s / 465, 1.00, 1.07);
+    } else {
       p.y = clamp(p.y + ny * s / 465, 0.55, 1.07);
     }
     if (nx !== 0 || ny !== 0) { input.lastNx = nx; input.lastNy = ny; }

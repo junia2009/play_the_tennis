@@ -31,6 +31,7 @@ let trailMeshes = [];
 let aimCursor;
 let hitFlash;
 let bounceRing;
+let serveBoxHighlight;
 
 let player3D = null, cpu3D = null;
 let clock;
@@ -45,10 +46,10 @@ export async function init(stageEl) {
   scene.fog = new THREE.Fog(0x0a141e, 30, 70);
 
   const aspect0 = window.innerWidth / window.innerHeight;
-  const fov0 = aspect0 < 0.8 ? 62 : 48;
+  const fov0 = aspect0 < 0.8 ? 66 : 50;
   camera = new THREE.PerspectiveCamera(fov0, aspect0, 0.1, 200);
-  camera.position.set(0, 8.5, 19);
-  camera.lookAt(0, 1, -2);
+  camera.position.set(0, 7.5, 22);
+  camera.lookAt(0, 0.5, 1);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -69,6 +70,7 @@ export async function init(stageEl) {
   buildAim();
   buildHitFlash();
   buildBounceRing();
+  buildServeBoxHighlight();
 
   window.addEventListener('resize', onResize);
 
@@ -78,7 +80,7 @@ export async function init(stageEl) {
 function onResize() {
   const aspect = window.innerWidth / window.innerHeight;
   camera.aspect = aspect;
-  camera.fov    = aspect < 0.8 ? 62 : 48;
+  camera.fov    = aspect < 0.8 ? 66 : 50;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
@@ -283,6 +285,20 @@ function buildBounceRing() {
   bounceRing.position.y = 0.018;
   bounceRing.visible = false;
   scene.add(bounceRing);
+}
+
+// ── Service box highlight ──────────────────────────────────
+function buildServeBoxHighlight() {
+  const boxW = COURT_W / 2;
+  const boxD = SVC_Z_CPU * COURT_L;
+  serveBoxHighlight = new THREE.Mesh(
+    new THREE.PlaneGeometry(boxW, boxD),
+    new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
+  );
+  serveBoxHighlight.rotation.x = -Math.PI / 2;
+  serveBoxHighlight.position.y = 0.009;
+  serveBoxHighlight.visible = false;
+  scene.add(serveBoxHighlight);
 }
 
 // ── Characters ─────────────────────────────────────────────
@@ -531,6 +547,21 @@ export function frame() {
     } else {
       m.visible = false;
     }
+  }
+
+  // ─── Service box highlight ─────────────────────────────
+  const showServeBox = state.phase === 'playing' && state.servePending && state.sc.server === 0;
+  serveBoxHighlight.visible = showServeBox;
+  if (showServeBox) {
+    const targetLeft = state.sc.serveSide === 0;
+    const boxW = COURT_W / 2;
+    const boxD = SVC_Z_CPU * COURT_L;
+    const zCenter = (gzPos(0) + gzPos(SVC_Z_CPU)) / 2;
+    serveBoxHighlight.position.x = targetLeft ? -(boxW / 2) : (boxW / 2);
+    serveBoxHighlight.position.z = zCenter;
+    serveBoxHighlight.scale.set(1, 1, 1);
+    const pulse = 0.22 + 0.06 * Math.sin(performance.now() * 0.004);
+    serveBoxHighlight.material.opacity = pulse;
   }
 
   // ─── Aim cursor ────────────────────────────────────────
