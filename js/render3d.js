@@ -3,9 +3,9 @@
 //  Maps game state (wx/z/h) → world coordinates (meters).
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { SkeletonUtils } from 'three/addons/utils/SkeletonUtils.js';
+import * as THREE from './lib/three.module.js';
+import { GLTFLoader } from './lib/loaders/GLTFLoader.js';
+import { SkeletonUtils } from './lib/utils/SkeletonUtils.js';
 
 import { state, CT, SVC_Z_CPU, SVC_Z_PLY, input, clamp } from './game.js';
 

@@ -8,7 +8,7 @@
 //  Rendering layer maps these to 3D world space.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export const VERSION = 'v2.1.0';
+export const VERSION = 'v2.1.1';
 
 export const CT = { left: 18, right: 402, cx: 210 };
 export const SVC_Z_CPU = 0.27;
