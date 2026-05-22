@@ -511,10 +511,10 @@ export function frame() {
     updateCharacter(cpu3D, gx(state.cpu.wx), gzPos(state.cpu.y), false, dt);
   }
 
-  // Player indicator
-  if (playerIndicator) {
-    playerIndicator.position.x = plWx;
-    playerIndicator.position.z = plGz;
+  // Player indicator — follow the rendered group position (after lerp)
+  if (playerIndicator && player3D) {
+    playerIndicator.position.x = player3D.group.position.x;
+    playerIndicator.position.z = player3D.group.position.z;
     playerIndicator.material.opacity = 0.5 + 0.2 * Math.sin(performance.now() * 0.005);
   }
 
