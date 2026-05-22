@@ -426,7 +426,7 @@ function updateCharacter(c, gx_pos, gz_pos, faceTowardCpu, dt) {
   c.group.position.z += (gz_pos - c.group.position.z) * 0.35;
 
   // Face direction (toward opponent's side or by movement)
-  c.group.rotation.y = faceTowardCpu ? Math.PI : 0;
+  c.group.rotation.y = faceTowardCpu ? 0 : Math.PI;
 
   // Crossfade idle ↔ run based on movement
   if (c.idleAct && c.runAct) {
