@@ -106,9 +106,22 @@ canvas{display:block;touch-action:none}
 /* ── ローディング ───────────────────────── */
 #loading{
   position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-  background:#0a0e14;color:#90caf9;font-size:14px;z-index:50;letter-spacing:2px;
+  background:#0a0e14;color:#90caf9;font-size:13px;z-index:50;letter-spacing:1px;
+  flex-direction:column;padding:24px;text-align:center;
 }
 #loading.hidden{display:none}
+#loading .title{font-size:16px;color:#4fc3f7;margin-bottom:14px;letter-spacing:3px}
+#loading .log{
+  font-family:monospace;font-size:11px;color:#90a4ae;
+  max-width:90%;text-align:left;line-height:1.6;
+  max-height:50vh;overflow:auto;white-space:pre-wrap;word-break:break-word;
+}
+#loading .log .ok{color:#81c784}
+#loading .log .err{color:#ef5350}
+#loading button{
+  margin-top:18px;background:#1565c0;border:1px solid #42a5f5;color:#fff;
+  padding:8px 18px;border-radius:18px;font-size:12px;letter-spacing:1px;cursor:pointer;
+}
 </style>
 </head>
 <body>
@@ -150,13 +163,71 @@ canvas{display:block;touch-action:none}
   <div id="oc"></div>
 </div>
 
-<div id="loading">LOADING ...</div>
+<div id="loading">
+  <div class="title">LOADING ...</div>
+  <div class="log" id="loadLog"></div>
+  <button id="resetBtn" style="display:none">キャッシュ削除して再読込</button>
+</div>
 
+<script>
+// ── Diagnostic logger (visible on loading screen) ────────────
+(function(){
+  const logEl = document.getElementById('loadLog');
+  const resetBtn = document.getElementById('resetBtn');
+  function log(msg, cls){
+    const line = document.createElement('div');
+    if(cls) line.className = cls;
+    line.textContent = msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  window.__diag = log;
+  window.__diag('UA: ' + navigator.userAgent.slice(0, 90));
+  window.__diag('URL: ' + location.href);
+
+  window.addEventListener('error', e => {
+    log('JS ERR: ' + (e.message || e.error || 'unknown') + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?'), 'err');
+    resetBtn.style.display = 'inline-block';
+  });
+  window.addEventListener('unhandledrejection', e => {
+    const r = e.reason;
+    log('REJECT: ' + (r && (r.message || r.toString && r.toString()) || 'unknown'), 'err');
+    resetBtn.style.display = 'inline-block';
+  });
+  // Watchdog: if boot doesn't complete in 12s, show debug controls
+  setTimeout(()=>{
+    if(!document.getElementById('loading').classList.contains('hidden')){
+      log('!! TIMEOUT (12s) - boot did not complete', 'err');
+      resetBtn.style.display = 'inline-block';
+    }
+  }, 12000);
+
+  resetBtn.addEventListener('click', async ()=>{
+    log('Clearing caches and SW...');
+    try {
+      if(navigator.serviceWorker){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for(const r of regs) await r.unregister();
+      }
+      if(window.caches){
+        const keys = await caches.keys();
+        for(const k of keys) await caches.delete(k);
+      }
+      log('Done. Reloading...', 'ok');
+      setTimeout(()=>location.reload(true), 500);
+    } catch(e) {
+      log('Reset error: ' + e.message, 'err');
+    }
+  });
+})();
+</script>
 
 <script type="module" src="/play_the_tennis/js/main.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/play_the_tennis/sw.js').catch(()=>{});
+  navigator.serviceWorker.register('/play_the_tennis/sw.js').catch(err=>{
+    window.__diag && window.__diag('SW reg failed: '+err.message, 'err');
+  });
   navigator.serviceWorker.addEventListener('controllerchange', ()=>window.location.reload());
   navigator.serviceWorker.addEventListener('message', e=>{
     if(e.data && e.data.type==='SW_UPDATED') window.location.reload();

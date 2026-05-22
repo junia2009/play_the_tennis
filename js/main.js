@@ -7,23 +7,34 @@ import * as render3d from './render3d.js';
 import * as input    from './input.js';
 import * as ui       from './ui.js';
 
+const diag = (m, cls) => { try { window.__diag && window.__diag(m, cls); } catch(e){} };
+
+diag('main.js: all imports resolved', 'ok');
+
 async function boot() {
+  diag('boot(): start');
   const stage = document.getElementById('stage');
   const loadingEl = document.getElementById('loading');
 
   try {
+    diag('render3d.init()...');
     await render3d.init(stage);
+    diag('  render3d.init OK', 'ok');
   } catch (e) {
-    loadingEl.textContent = 'ERROR LOADING 3D';
-    loadingEl.style.color = '#ef5350';
-    console.error(e);
+    diag('render3d.init FAILED: ' + (e && e.message || e), 'err');
+    if (e && e.stack) diag(String(e.stack).slice(0, 300), 'err');
     return;
   }
 
-  input.init();
-  ui.init();
+  try {
+    input.init();
+    ui.init();
+    diag('input+ui OK', 'ok');
+  } catch (e) {
+    diag('input/ui init FAILED: ' + (e && e.message || e), 'err');
+    return;
+  }
 
-  // Hook game events → 3D effects
   on('hit', e => {
     render3d.triggerHitFlash(e.wx, e.z, e.h);
     render3d.triggerSwing(e.hitter === 0);
@@ -32,9 +43,9 @@ async function boot() {
     render3d.triggerBounce(e.wx, e.z);
   });
 
+  diag('all systems go, starting loop...', 'ok');
   loadingEl.classList.add('hidden');
 
-  // Game loop: fixed-timestep physics, but visual smoothing via render3d's clock
   const FIXED_DT_MS = 16.667;
   let acc = 0;
   let last = performance.now();
@@ -54,4 +65,6 @@ async function boot() {
   requestAnimationFrame(loop);
 }
 
-boot();
+boot().catch(e => {
+  diag('boot() unhandled: ' + (e && e.message || e), 'err');
+});
