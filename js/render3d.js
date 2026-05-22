@@ -32,6 +32,7 @@ let aimCursor;
 let hitFlash;
 let bounceRing;
 let serveBoxHighlight;
+let playerIndicator;
 
 let player3D = null, cpu3D = null;
 let clock;
@@ -46,10 +47,10 @@ export async function init(stageEl) {
   scene.fog = new THREE.Fog(0x0a141e, 30, 70);
 
   const aspect0 = window.innerWidth / window.innerHeight;
-  const fov0 = aspect0 < 0.8 ? 66 : 50;
+  const fov0 = aspect0 < 0.8 ? 65 : 50;
   camera = new THREE.PerspectiveCamera(fov0, aspect0, 0.1, 200);
-  camera.position.set(0, 7.5, 22);
-  camera.lookAt(0, 0.5, 1);
+  camera.position.set(0, 8.5, 19);
+  camera.lookAt(0, 1, -2);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -71,6 +72,7 @@ export async function init(stageEl) {
   buildHitFlash();
   buildBounceRing();
   buildServeBoxHighlight();
+  buildPlayerIndicator();
 
   window.addEventListener('resize', onResize);
 
@@ -80,7 +82,7 @@ export async function init(stageEl) {
 function onResize() {
   const aspect = window.innerWidth / window.innerHeight;
   camera.aspect = aspect;
-  camera.fov    = aspect < 0.8 ? 66 : 50;
+  camera.fov    = aspect < 0.8 ? 65 : 50;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
@@ -301,6 +303,17 @@ function buildServeBoxHighlight() {
   scene.add(serveBoxHighlight);
 }
 
+// ── Player position indicator (glowing ring under player) ──
+function buildPlayerIndicator() {
+  playerIndicator = new THREE.Mesh(
+    new THREE.RingGeometry(0.35, 0.55, 32),
+    new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.7, side: THREE.DoubleSide })
+  );
+  playerIndicator.rotation.x = -Math.PI / 2;
+  playerIndicator.position.y = 0.012;
+  scene.add(playerIndicator);
+}
+
 // ── Characters ─────────────────────────────────────────────
 async function buildCharacters() {
   let gltf;
@@ -490,11 +503,19 @@ export function frame() {
   // Simpler: trigger on every hit event via game.js hooks (registered in main.js)
 
   // ─── Update characters ─────────────────────────────────
+  const plWx = gx(state.pl.wx), plGz = gzPos(state.pl.y);
   if (player3D) {
-    updateCharacter(player3D, gx(state.pl.wx), gzPos(state.pl.y), true, dt);
+    updateCharacter(player3D, plWx, plGz, true, dt);
   }
   if (cpu3D) {
     updateCharacter(cpu3D, gx(state.cpu.wx), gzPos(state.cpu.y), false, dt);
+  }
+
+  // Player indicator
+  if (playerIndicator) {
+    playerIndicator.position.x = plWx;
+    playerIndicator.position.z = plGz;
+    playerIndicator.material.opacity = 0.5 + 0.2 * Math.sin(performance.now() * 0.005);
   }
 
   // ─── Ball ──────────────────────────────────────────────
