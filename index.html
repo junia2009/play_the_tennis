@@ -2,237 +2,186 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tennis Web Game</title>
-<link rel="manifest" href="/play_the_tennis/manifest.json">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%232e7d32'/%3E%3Ccircle cx='90' cy='90' r='56' fill='%23dfff5e' stroke='%23fff' stroke-width='4'/%3E%3Cpath d='M40 90 Q90 56 140 90' fill='none' stroke='%23fff' stroke-width='4'/%3E%3Cpath d='M40 90 Q90 124 140 90' fill='none' stroke='%23fff' stroke-width='4'/%3E%3C/svg%3E">
-<meta name="theme-color" content="#1b5e20">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Play the Tennis</title>
+<meta name="description" content="スマホで遊べる3Dテニスゲーム">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
+<meta name="theme-color" content="#0d2a4a">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Tennis">
 <style>
-*{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
-html,body{
-  width:100%;height:100%;background:#0a0e14;overflow:hidden;
-  font-family:'Helvetica Neue',Arial,sans-serif;color:#fff;
+:root{
+  --bg:#0b1b2e; --panel:rgba(10,24,42,.92); --line:rgba(255,255,255,.14);
+  --text:#f4f8fc; --muted:#9fb3c8; --accent:#ffd54a; --blue:#2f8cff; --good:#4caf50; --bad:#ef5350;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
 }
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;overscroll-behavior:none}
 #stage{position:fixed;inset:0}
-canvas{display:block;touch-action:none}
+#stage canvas{display:block;touch-action:none}
+button{font:inherit;color:inherit;cursor:pointer}
 
-/* ── スコアバー ─────────────────────────── */
-#hud{
-  position:fixed;top:0;left:0;right:0;padding:8px 12px;
-  background:linear-gradient(180deg,rgba(0,0,0,.85),rgba(0,0,0,.4) 70%,transparent);
-  display:flex;justify-content:space-between;align-items:flex-start;
-  font-size:12px;z-index:5;pointer-events:none;
-}
-#hud .col{display:flex;flex-direction:column;gap:2px}
-#hud .lbl{color:#90a4ae;font-size:9px;letter-spacing:.6px}
-#hud .val{font-weight:700;font-size:13px}
-#hud .right{text-align:right}
-#hud .meta{color:rgba(255,255,255,.45);font-size:9px;margin-top:1px}
-#serveTag{color:#ffd54f;font-weight:700}
+/* ── スコアボード ── */
+#hud{position:fixed;top:calc(8px + var(--safe-t));left:calc(8px + var(--safe-l));right:calc(8px + var(--safe-r));
+  display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:5}
+#hud[hidden]{display:none}
+.board{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px;min-width:170px;
+  box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.board .row{display:grid;grid-template-columns:1fr 34px 42px;align-items:center;height:28px}
+.board .row + .row{border-top:1px solid var(--line)}
+.board .name{padding:0 10px;font-weight:600;display:flex;align-items:center;gap:6px}
+.board .name::before{content:"";width:7px;height:7px;border-radius:50%;background:transparent}
+.board .name.serving::before{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.board .g{text-align:center;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.board .p{text-align:center;font-weight:800;background:rgba(255,255,255,.08);height:100%;line-height:28px;font-variant-numeric:tabular-nums}
+.board .tag{font-size:10px;letter-spacing:1px;color:var(--muted);padding:3px 10px;border-top:1px solid var(--line)}
+#pauseBtn{pointer-events:auto;width:42px;height:42px;border-radius:50%;background:var(--panel);border:1px solid var(--line);
+  font-size:16px;font-weight:800;letter-spacing:1px}
+#call{position:fixed;top:calc(78px + var(--safe-t));left:50%;transform:translateX(-50%);padding:5px 14px;border-radius:20px;
+  background:rgba(0,0,0,.55);font-size:14px;font-weight:700;white-space:nowrap;opacity:0;transition:opacity .25s;pointer-events:none;z-index:5}
+#call.on{opacity:1}
 
-/* ── オーバーレイ (タイトル/難易度/結果) ── */
-#ov{
-  position:fixed;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
-  background:radial-gradient(ellipse at center,rgba(0,20,40,.85),rgba(0,0,8,.96));
-  z-index:30;gap:6px;padding:24px;
-}
-#ov.hidden{display:none}
-#ov h1{font-size:clamp(28px,9vw,54px);text-shadow:0 0 18px #4fc3f7;letter-spacing:3px;margin-bottom:2px}
-#ov h2{font-size:clamp(11px,3vw,18px);color:#90caf9;margin-bottom:20px;letter-spacing:1px}
-.btn{
-  background:linear-gradient(135deg,#1565c0,#0d47a1);border:2px solid #42a5f5;
-  color:#fff;padding:10px 26px;font-size:clamp(11px,3vw,15px);border-radius:24px;
-  cursor:pointer;margin:4px;transition:.15s;letter-spacing:.8px;font-weight:600;
-}
-.btn:active{transform:scale(.96)}
-.btn.sel{background:linear-gradient(135deg,#00796b,#004d40);border-color:#26a69a}
-.row{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:6px 0}
-.ver{margin-top:14px;color:rgba(255,255,255,.35);font-size:11px;letter-spacing:.5px}
+/* ── メッセージ ── */
+.msg{position:fixed;top:34%;left:50%;transform:translate(-50%,-50%) scale(.9);text-align:center;pointer-events:none;
+  opacity:0;transition:opacity .2s,transform .2s;z-index:8;white-space:nowrap}
+.msg.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.msg .t{font-size:clamp(26px,8vw,44px);font-weight:900;letter-spacing:1px;text-shadow:0 3px 0 rgba(0,0,0,.35),0 0 18px rgba(0,0,0,.5)}
+.msg .s{margin-top:4px;font-size:15px;font-weight:700;display:inline-block;padding:3px 14px;border-radius:14px;background:rgba(0,0,0,.5)}
+.msg.good .t{color:#b9f6ca}.msg.bad .t{color:#ffcdd2}.msg.fault .t{color:#ffe082}.msg.game .t{color:var(--accent)}
 
-/* ── メッセージバナー ───────────────────── */
-#msg{
-  position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);
-  background:rgba(0,0,16,.94);border:2px solid #42a5f5;border-radius:10px;
-  padding:10px 22px;font-size:clamp(11px,3vw,16px);text-align:center;
-  z-index:20;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;
-}
-#msg.on{opacity:1}
+#hint{position:fixed;left:50%;top:calc(116px + var(--safe-t));transform:translateX(-50%);font-size:13px;font-weight:600;
+  padding:5px 12px;border-radius:14px;background:rgba(0,0,0,.45);opacity:0;transition:opacity .2s;pointer-events:none;z-index:6;white-space:nowrap}
+#hint.on{opacity:1}
 
-/* ── 仮想スティック ──────────────────────── */
-#stick{
-  position:fixed;left:24px;bottom:30px;width:120px;height:120px;
-  border-radius:50%;background:rgba(255,255,255,.06);
-  border:2px solid rgba(255,255,255,.35);
-  z-index:10;touch-action:none;
-}
-#knob{
-  position:absolute;left:50%;top:50%;width:48px;height:48px;
-  border-radius:50%;background:radial-gradient(circle at 35% 35%,#90caf9,#1565c0);
-  border:1.5px solid rgba(255,255,255,.6);
-  transform:translate(-50%,-50%);pointer-events:none;
-  transition:background .15s;
-}
-#stick.active #knob{background:radial-gradient(circle at 35% 35%,#bbdefb,#1976d2)}
+/* ── 操作 ── */
+#controls{position:fixed;inset:0;z-index:4;pointer-events:none}
+#controls[hidden]{display:none}
+#stickZone{position:absolute;left:0;bottom:0;width:55%;height:62%;pointer-events:auto;touch-action:none}
+#stickBase{position:absolute;left:calc(70px + var(--safe-l));top:calc(100% - 100px - var(--safe-b));width:112px;height:112px;margin:-56px 0 0 -56px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.07);opacity:.55;transition:opacity .15s}
+#stickBase.active{opacity:1}
+#stickKnob{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 35% 30%,#fff,#9fc7ff 45%,#2f6fd8);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#shots{position:absolute;right:calc(14px + var(--safe-r));bottom:calc(20px + var(--safe-b));width:178px;height:178px;pointer-events:auto}
+.shot{position:absolute;width:66px;height:66px;border-radius:50%;border:2px solid rgba(255,255,255,.7);
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;text-shadow:0 1px 2px rgba(0,0,0,.5);
+  box-shadow:0 3px 10px rgba(0,0,0,.4);touch-action:none;transition:transform .06s}
+.shot.pressed{transform:scale(.88);filter:brightness(1.25)}
+.shot[data-shot=flat]{right:0;top:56px;width:76px;height:76px;font-size:13px;background:radial-gradient(circle at 35% 30%,#8ec5ff,#1565c0)}
+.shot[data-shot=topspin]{left:0;top:56px;background:radial-gradient(circle at 35% 30%,#a5e6a8,#2e7d32)}
+.shot[data-shot=lob]{left:56px;top:0;background:radial-gradient(circle at 35% 30%,#e1b7ef,#7b1fa2)}
+.shot[data-shot=slice]{left:56px;bottom:0;background:radial-gradient(circle at 35% 30%,#ffd29a,#e65100)}
 
-/* ── ショットボタン (右下、ダイヤ配置) ─── */
-#shots{
-  position:fixed;right:24px;bottom:30px;width:140px;height:140px;
-  z-index:10;
-}
-.sb{
-  position:absolute;width:50px;height:50px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  font-size:10px;font-weight:700;color:#fff;text-align:center;
-  border:1.5px solid rgba(255,255,255,.6);box-shadow:0 2px 8px rgba(0,0,0,.4);
-  touch-action:none;line-height:1;
-}
-.sb.pressed{transform:scale(.88);box-shadow:0 0 12px rgba(255,255,255,.5)}
-#sb-lob    {top:0;       left:50%;transform:translate(-50%,0);   background:radial-gradient(circle at 35% 35%,#ce93d8,#7b1fa2)}
-#sb-topspin{top:50%;     left:0;  transform:translate(0,-50%);   background:radial-gradient(circle at 35% 35%,#a5d6a7,#2e7d32)}
-#sb-slice  {top:100%;    left:50%;transform:translate(-50%,-100%);background:radial-gradient(circle at 35% 35%,#ffcc80,#e65100)}
-#sb-flat   {top:50%;     left:100%;transform:translate(-100%,-50%);background:radial-gradient(circle at 35% 35%,#90caf9,#1565c0);width:56px;height:56px;font-size:10px}
-#sb-lob.pressed   {transform:translate(-50%,0) scale(.88)}
-#sb-topspin.pressed{transform:translate(0,-50%) scale(.88)}
-#sb-slice.pressed {transform:translate(-50%,-100%) scale(.88)}
-#sb-flat.pressed  {transform:translate(-100%,-50%) scale(.88)}
+/* ── オーバーレイ ── */
+#overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;
+  background:linear-gradient(180deg,rgba(5,15,30,.35),rgba(5,15,30,.75));overflow:auto}
+#overlay[hidden]{display:none}
+.panel{width:min(420px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 18px;
+  display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px rgba(0,0,0,.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.panel h2{text-align:center;font-size:22px}
+.logo{text-align:center;font-size:20px;letter-spacing:4px;line-height:1.1;margin:4px 0 8px;color:var(--muted);font-weight:700}
+.logo b{display:block;font-size:46px;letter-spacing:6px;color:var(--text);font-weight:900}
+.logo .ball{display:block;width:34px;height:34px;margin:0 auto 10px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#f7ffb0,#c6e01e 60%,#9bb515);box-shadow:0 0 16px rgba(220,255,60,.5)}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:12px;color:var(--muted);letter-spacing:1px}
+.seg{display:flex;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;background:none;border:none;padding:9px 4px;border-radius:9px;font-size:13px;font-weight:700;color:var(--muted)}
+.seg button.on{background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(47,140,255,.4)}
+.primary{background:linear-gradient(180deg,#ffe066,#ffc107);color:#3a2a00;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:900;
+  letter-spacing:2px;margin-top:6px;box-shadow:0 4px 0 #b38600}
+.primary:active{transform:translateY(2px);box-shadow:0 2px 0 #b38600}
+.ghost{background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:12px;padding:11px;font-size:14px;font-weight:700}
+.ver{text-align:center;color:var(--muted);font-size:11px;opacity:.7}
+.how ul{list-style:none;display:flex;flex-direction:column;gap:9px;font-size:13.5px;line-height:1.55}
+.how li b{color:var(--accent)}
+.how .shots{display:grid;gap:6px;font-size:13px;background:rgba(255,255,255,.05);border-radius:10px;padding:10px}
+.how .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.dot.flat{background:#1e88e5}.dot.topspin{background:#43a047}.dot.slice{background:#fb8c00}.dot.lob{background:#8e24aa}
+.how .keys{font-size:11.5px;color:var(--muted);text-align:center}
+.result{text-align:center}
+.result .big{font-size:40px;font-weight:900;letter-spacing:2px}
+.result.win .big{color:var(--accent);text-shadow:0 0 20px rgba(255,213,74,.5)}
+.result.lose .big{color:#90a4ae}
+.result .final{font-size:30px;font-weight:800}
+.result .sub{color:var(--muted);font-size:13px}
+.stats{width:100%;border-collapse:collapse;font-size:14px}
+.stats td{width:25%;font-weight:800;padding:5px 0;font-variant-numeric:tabular-nums}
+.stats th{font-weight:500;color:var(--muted);font-size:12px}
+.stats tr + tr{border-top:1px solid var(--line)}
 
-#controls.hidden{display:none}
-#controls.hidden #stick,#controls.hidden #shots{display:none}
+body[data-phase=menu] #hud,body[data-phase=menu] #controls,body[data-phase=menu] #hint,body[data-phase=menu] #call{display:none}
 
-/* ── ローディング ───────────────────────── */
-#loading{
-  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-  background:#0a0e14;color:#90caf9;font-size:13px;z-index:50;letter-spacing:1px;
-  flex-direction:column;padding:24px;text-align:center;
-}
-#loading.hidden{display:none}
-#loading .title{font-size:16px;color:#4fc3f7;margin-bottom:14px;letter-spacing:3px}
-#loading .log{
-  font-family:monospace;font-size:11px;color:#90a4ae;
-  max-width:90%;text-align:left;line-height:1.6;
-  max-height:50vh;overflow:auto;white-space:pre-wrap;word-break:break-word;
-}
-#loading .log .ok{color:#81c784}
-#loading .log .err{color:#ef5350}
-#loading button{
-  margin-top:18px;background:#1565c0;border:1px solid #42a5f5;color:#fff;
-  padding:8px 18px;border-radius:18px;font-size:12px;letter-spacing:1px;cursor:pointer;
+#loading{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:var(--bg);color:var(--muted);font-size:14px;letter-spacing:2px;text-align:center;padding:24px}
+#loading pre{font-size:11px;white-space:pre-wrap;color:#ef9a9a;max-width:90vw}
+#loading button{padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:#16324f}
+.spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media (min-aspect-ratio: 1/1){
+  #stickZone{width:45%;height:70%}
+  #hint{top:calc(12px + var(--safe-t))}
+  #call{top:calc(52px + var(--safe-t))}
 }
 </style>
 </head>
-<body>
+<body data-phase="menu">
 <div id="stage"></div>
 
-<div id="hud">
-  <div class="col">
-    <div class="lbl">GAME</div>
-    <div class="val" id="hud-game">0 - 0</div>
-    <div class="meta" id="hud-meta">1 SET MATCH</div>
+<div id="hud" hidden>
+  <div class="board">
+    <div class="row"><div class="name" id="sbName0">あなた</div><div class="g" id="sbGames0">0</div><div class="p" id="sbPts0">0</div></div>
+    <div class="row"><div class="name" id="sbName1">CPU</div><div class="g" id="sbGames1">0</div><div class="p" id="sbPts1">0</div></div>
+    <div class="tag" id="sbTag">NORMAL</div>
   </div>
-  <div class="col">
-    <div class="lbl">POINT</div>
-    <div class="val" id="hud-point">CPU 0  あなた 0</div>
-    <div class="meta" id="hud-tb"></div>
-  </div>
-  <div class="col right">
-    <div class="lbl">SERVE</div>
-    <div class="val" id="serveTag">▶ あなたのサーブ</div>
-    <div class="meta" id="hud-side">1st | デュースサイド | NORMAL</div>
-  </div>
+  <button id="pauseBtn" aria-label="ポーズ">II</button>
 </div>
+<div id="call"></div>
+<div id="msg" class="msg"></div>
+<div id="hint"></div>
 
-<div id="controls" class="hidden">
-  <div id="stick"><div id="knob"></div></div>
+<div id="controls" hidden>
+  <div id="stickZone"><div id="stickBase"><div id="stickKnob"></div></div></div>
   <div id="shots">
-    <div class="sb" id="sb-lob"    >ロブ</div>
-    <div class="sb" id="sb-topspin">トップ</div>
-    <div class="sb" id="sb-slice"  >スライス</div>
-    <div class="sb" id="sb-flat"   >フラット</div>
+    <button class="shot" data-shot="lob">ロブ</button>
+    <button class="shot" data-shot="topspin">トップ</button>
+    <button class="shot" data-shot="flat">フラット</button>
+    <button class="shot" data-shot="slice">スライス</button>
   </div>
 </div>
 
-<div id="msg"></div>
+<div id="overlay" hidden></div>
 
-<div id="ov">
-  <h1>🎾 TENNIS</h1>
-  <h2>Web Game · 3D</h2>
-  <div id="oc"></div>
-</div>
-
-<div id="loading">
-  <div class="title">LOADING ...</div>
-  <div class="log" id="loadLog"></div>
-  <button id="resetBtn" style="display:none">キャッシュ削除して再読込</button>
-</div>
+<div id="loading"><div class="spinner"></div><div>LOADING</div></div>
 
 <script>
-// ── Diagnostic logger (visible on loading screen) ────────────
-(function(){
-  const logEl = document.getElementById('loadLog');
-  const resetBtn = document.getElementById('resetBtn');
-  function log(msg, cls){
-    const line = document.createElement('div');
-    if(cls) line.className = cls;
-    line.textContent = msg;
-    logEl.appendChild(line);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-  window.__diag = log;
-  window.__diag('UA: ' + navigator.userAgent.slice(0, 90));
-  window.__diag('URL: ' + location.href);
-
-  window.addEventListener('error', e => {
-    log('JS ERR: ' + (e.message || e.error || 'unknown') + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?'), 'err');
-    resetBtn.style.display = 'inline-block';
+  // 起動時のエラーをローディング画面に表示する
+  window.addEventListener('error', function (e) {
+    var el = document.getElementById('loading');
+    if (el && e.message) el.insertAdjacentHTML('beforeend', '<pre>' + e.message + '</pre><button onclick="location.reload()">再読み込み</button>');
   });
-  window.addEventListener('unhandledrejection', e => {
-    const r = e.reason;
-    log('REJECT: ' + (r && (r.message || r.toString && r.toString()) || 'unknown'), 'err');
-    resetBtn.style.display = 'inline-block';
-  });
-  // Watchdog: if boot doesn't complete in 12s, show debug controls
-  setTimeout(()=>{
-    if(!document.getElementById('loading').classList.contains('hidden')){
-      log('!! TIMEOUT (12s) - boot did not complete', 'err');
-      resetBtn.style.display = 'inline-block';
-    }
-  }, 12000);
-
-  resetBtn.addEventListener('click', async ()=>{
-    log('Clearing caches and SW...');
-    try {
-      if(navigator.serviceWorker){
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for(const r of regs) await r.unregister();
-      }
-      if(window.caches){
-        const keys = await caches.keys();
-        for(const k of keys) await caches.delete(k);
-      }
-      log('Done. Reloading...', 'ok');
-      setTimeout(()=>location.reload(true), 500);
-    } catch(e) {
-      log('Reset error: ' + e.message, 'err');
-    }
-  });
-})();
 </script>
-
-<script type="module" src="/play_the_tennis/js/main.js"></script>
+<script type="module" src="./js/main.js"></script>
 <script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/play_the_tennis/sw.js').catch(err=>{
-    window.__diag && window.__diag('SW reg failed: '+err.message, 'err');
-  });
-  navigator.serviceWorker.addEventListener('controllerchange', ()=>window.location.reload());
-  navigator.serviceWorker.addEventListener('message', e=>{
-    if(e.data && e.data.type==='SW_UPDATED') window.location.reload();
-  });
-}
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').catch(function () {});
+    });
+    // 旧バージョンの SW から新しい SW に切り替わったときだけ再読み込み
+    var reloaded = false, hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (reloaded || !hadController) return;
+      reloaded = true;
+      location.reload();
+    });
+  }
 </script>
 </body>
 </html>

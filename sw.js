@@ -1,31 +1,27 @@
-// ─── バージョンここだけ変える ────────────────────────────────────
-const CACHE = 'tennis-v2.1.7';
-// ─────────────────────────────────────────────────────────────────
+// Service Worker — オフラインでも遊べるようにキャッシュする
+// ファイルを更新したら CACHE のバージョンを上げる
+const CACHE = 'tennis-v3.0.0';
 
-const LOCAL_ASSETS = [
-  '/play_the_tennis/',
-  '/play_the_tennis/index.html',
-  '/play_the_tennis/manifest.json',
-  '/play_the_tennis/sw.js',
-  '/play_the_tennis/js/main.js',
-  '/play_the_tennis/js/game.js',
-  '/play_the_tennis/js/render3d.js',
-  '/play_the_tennis/js/input.js',
-  '/play_the_tennis/js/ui.js',
-  '/play_the_tennis/assets/player.glb',
-  '/play_the_tennis/js/lib/three.module.js',
-  '/play_the_tennis/js/lib/loaders/GLTFLoader.js',
-  '/play_the_tennis/js/lib/utils/SkeletonUtils.js',
-  '/play_the_tennis/js/lib/utils/BufferGeometryUtils.js'
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icon.svg',
+  './js/main.js',
+  './js/config.js',
+  './js/physics.js',
+  './js/score.js',
+  './js/match.js',
+  './js/input.js',
+  './js/ui.js',
+  './js/audio.js',
+  './js/render/scene.js',
+  './js/render/character.js',
+  './js/lib/three.module.js',
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(async (c) => {
-      await c.addAll(LOCAL_ASSETS);
-      return self.skipWaiting();
-    })
-  );
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -33,26 +29,22 @@ self.addEventListener('activate', e => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: 'window' }).then(clients => {
-        clients.forEach(c => c.postMessage({ type: 'SW_UPDATED', version: CACHE }));
-      }))
   );
 });
 
+// ネット優先・失敗したらキャッシュ（更新がすぐ反映され、オフラインでも動く）
 self.addEventListener('fetch', e => {
-  if (!e.request.url.startsWith('http')) return;
-  if (e.request.method !== 'GET') return;
-
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const fetchPromise = fetch(e.request).then(res => {
-        if (res.ok && res.type !== 'opaque') {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
+    fetch(req)
+      .then(res => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copy));
         }
         return res;
-      }).catch(() => null);
-      return cached || fetchPromise;
-    })
+      })
+      .catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match('./index.html')))
   );
 });

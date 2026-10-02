@@ -1,70 +1,53 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  main.js — bootstrap & game loop
+//  main.js — 起動とメインループ
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import { tick, state, on } from './game.js';
-import * as render3d from './render3d.js';
-import * as input    from './input.js';
-import * as ui       from './ui.js';
+import { PHYS_DT, HUMAN } from './config.js';
+import { state, step, on } from './match.js';
+import * as view from './render/scene.js';
+import * as input from './input.js';
+import * as ui from './ui.js';
+import * as audio from './audio.js';
 
-const diag = (m, cls) => { try { window.__diag && window.__diag(m, cls); } catch(e){} };
-
-diag('main.js: all imports resolved', 'ok');
-
-async function boot() {
-  diag('boot(): start');
-  const stage = document.getElementById('stage');
-  const loadingEl = document.getElementById('loading');
-
-  try {
-    diag('render3d.init()...');
-    await render3d.init(stage);
-    diag('  render3d.init OK', 'ok');
-  } catch (e) {
-    diag('render3d.init FAILED: ' + (e && e.message || e), 'err');
-    if (e && e.stack) diag(String(e.stack).slice(0, 300), 'err');
-    return;
-  }
-
-  try {
-    input.init();
-    ui.init();
-    diag('input+ui OK', 'ok');
-  } catch (e) {
-    diag('input/ui init FAILED: ' + (e && e.message || e), 'err');
-    return;
-  }
+function boot() {
+  view.init(document.getElementById('stage'));
+  input.init({ onPress: () => audio.unlock() });
+  ui.init();
 
   on('hit', e => {
-    render3d.triggerHitFlash(e.wx, e.z, e.h);
-    render3d.triggerSwing(e.hitter === 0);
+    view.flashAt(e.pos, e.type === 'smash' || e.speed > 24);
+    audio.hit(Math.min(1.5, e.speed / 20), e.who !== HUMAN);
   });
-  on('bounce', e => {
-    render3d.triggerBounce(e.wx, e.z);
-  });
+  on('bounce', e => { view.bounceAt(e.x, e.z); audio.bounce(e.z < 0); });
+  on('net', () => audio.net());
+  on('netcord', () => audio.net());
+  on('whiff', () => audio.whiff());
+  on('fault', () => audio.fault());
+  on('point', e => audio.point(e.winner === HUMAN));
+  on('matchStart', () => view.snapCamera(state));
 
-  diag('all systems go, starting loop...', 'ok');
-  loadingEl.classList.add('hidden');
+  document.getElementById('loading').remove();
 
-  const FIXED_DT_MS = 16.667;
-  let acc = 0;
   let last = performance.now();
-
-  function loop(t) {
-    const elapsed = Math.min(t - last, 100);
-    last = t;
-    acc += elapsed;
-    while (acc >= FIXED_DT_MS) {
-      tick(FIXED_DT_MS);
-      acc -= FIXED_DT_MS;
-    }
+  let acc = 0;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    acc += dt;
+    let n = 0;
+    while (acc >= PHYS_DT && n < 24) { step(PHYS_DT); acc -= PHYS_DT; n++; }
+    if (n === 24) acc = 0;
     ui.syncHud();
-    render3d.frame();
-    requestAnimationFrame(loop);
+    view.render(state, dt);
+    requestAnimationFrame(frame);
   }
-  requestAnimationFrame(loop);
+  requestAnimationFrame(frame);
 }
 
-boot().catch(e => {
-  diag('boot() unhandled: ' + (e && e.message || e), 'err');
-});
+try {
+  boot();
+} catch (e) {
+  const el = document.getElementById('loading');
+  if (el) el.innerHTML = `<p>起動に失敗しました</p><pre>${String(e && e.message || e)}</pre><button onclick="location.reload()">再読み込み</button>`;
+  throw e;
+}
