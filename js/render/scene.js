@@ -14,6 +14,11 @@ let rigs = [];
 let camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 let lowQuality = false;
 let flashT = 1, bounceT = 1;
+let shakeT = 0, shakeAmp = 0;
+let trailColor = new THREE.Color(0xf4ff9a);
+
+// 球種ごとの色（ボタンの色と揃える）
+export const SHOT_COLORS = { flat: 0x64b5ff, topspin: 0x7dff8a, slice: 0xffb74d, lob: 0xe08cff, smash: 0xfff176 };
 
 const TRAIL_N = 9;
 
@@ -319,6 +324,19 @@ function buildMarkers() {
 }
 
 // ── エフェクト ─────────────────────────────
+export function setTrail(type) {
+  trailColor.set(SHOT_COLORS[type] || 0xf4ff9a);
+}
+
+export function shake(amp) {
+  shakeAmp = Math.max(shakeAmp, amp);
+  shakeT = 0;
+}
+
+export function showAimAt(x, z) {
+  aimMark.position.set(x, 0.012, z);
+}
+
 export function flashAt(pos, strong) {
   hitFlash.position.set(pos.x, pos.y, pos.z);
   hitFlash.material.color.set(strong ? 0xfff59d : 0xffffff);
@@ -353,7 +371,7 @@ export function render(state, dt) {
   for (let i = 0; i < TRAIL_N; i++) {
     const p = trailPts[i + 1];
     trail[i].visible = !!p;
-    if (p) trail[i].position.set(p.x, p.y, p.z);
+    if (p) { trail[i].position.set(p.x, p.y, p.z); trail[i].material.color.copy(trailColor); }
   }
 
   // マーカー
@@ -364,7 +382,13 @@ export function render(state, dt) {
     landingMark.scale.setScalar(s);
   }
   aimMark.visible = !!state.aim;
-  if (state.aim) aimMark.position.set(state.aim.x, 0.012, state.aim.z);
+  if (state.aim) {
+    aimMark.position.x += (state.aim.x - aimMark.position.x) * Math.min(1, dt * 18);
+    aimMark.position.z += (state.aim.z - aimMark.position.z) * Math.min(1, dt * 18);
+    const c = SHOT_COLORS[state.aim.type] || 0x00e5ff;
+    aimMark.children.forEach(m => m.material.color.set(c));
+    aimMark.scale.setScalar(1 + Math.sin(performance.now() / 90) * 0.08);
+  }
 
   const showRing = state.phase !== 'title' && state.phase !== 'over';
   playerRing.visible = showRing;
@@ -419,6 +443,13 @@ function updateCamera(state, dt) {
   camLook.lerp(new THREE.Vector3(lx, ly, lz), k);
   camera.position.copy(camPos);
   camera.lookAt(camLook);
+  if (shakeAmp > 0.001) {
+    shakeT += dt;
+    const a = shakeAmp * Math.exp(-shakeT * 14);
+    camera.position.x += Math.sin(shakeT * 90) * a;
+    camera.position.y += Math.cos(shakeT * 77) * a * 0.7;
+    if (a < 0.002) shakeAmp = 0;
+  }
 }
 
 export function snapCamera(state) {

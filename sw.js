@@ -1,6 +1,6 @@
 // Service Worker — オフラインでも遊べるようにキャッシュする
 // ファイルを更新したら CACHE のバージョンを上げる
-const CACHE = 'tennis-v3.0.0';
+const CACHE = 'tennis-v3.1.0';
 
 const ASSETS = [
   './',

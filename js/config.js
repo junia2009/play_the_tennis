@@ -7,7 +7,7 @@
 //    z … コート縦方向（ネット = 0、プレイヤー側が +、CPU側が −）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export const VERSION = 'v3.0.0';
+export const VERSION = 'v3.1.0';
 
 export const COURT = {
   halfW: 4.115,          // シングルス横幅の半分
@@ -56,12 +56,14 @@ export const PLAYER = {
   minHitY: 0.05,
   maxHitY: 2.9,
   idealOffset: 0.75,    // 打点と体の横距離
+  humanErr: 0.42,       // プレイヤーの打球のブレ倍率（CPU は難易度の err）
+  aimMaxX: 3.55,        // スティックいっぱいで狙う横位置
 };
 
 export const DIFFICULTY = {
-  easy:   { label: 'EASY',   speed: 4.4, react: 0.34, err: 1.45, aimMargin: 1.20, pace: 0.80, posErr: 0.55, kindRatio: 0.70, net: false },
-  normal: { label: 'NORMAL', speed: 5.6, react: 0.22, err: 0.92, aimMargin: 0.85, pace: 0.92, posErr: 0.30, kindRatio: 0.35, net: false },
-  hard:   { label: 'HARD',   speed: 6.6, react: 0.12, err: 0.70, aimMargin: 0.55, pace: 1.05, posErr: 0.12, kindRatio: 0.10, net: true },
+  easy:   { label: 'EASY',   reach: 1.25, speed: 3.8, react: 0.34, err: 1.05, aimMargin: 1.20, pace: 0.82, posErr: 0.55, kindRatio: 0.70, net: false },
+  normal: { label: 'NORMAL', reach: 1.3, speed: 4.9, react: 0.20, err: 0.50, aimMargin: 0.80, pace: 0.98, posErr: 0.30, kindRatio: 0.35, net: false },
+  hard:   { label: 'HARD',   reach: 1.4, speed: 5.9, react: 0.10, err: 0.34, aimMargin: 0.55, pace: 1.10, posErr: 0.12, kindRatio: 0.10, net: true },
 };
 
 export const MATCH_FORMATS = {

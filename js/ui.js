@@ -98,10 +98,11 @@ function showHowTo() {
       <h2>遊び方</h2>
       <ul>
         <li><b>移動</b>：画面の左側をドラッグ（スティック）。キーボードは矢印 / WASD</li>
-        <li><b>打つ</b>：ボールが来たら右のショットボタンを押して<b>予約</b>。届く位置に来ると自動でスイングします。早めに押すほど強い球になります</li>
-        <li><b>狙う</b>：打つ瞬間のスティックの向きでコースが変わります（上＝深く、下＝浅く、左右＝コース）</li>
+        <li><b>打つ</b>：ボールが来たら右のショットボタンを押して<b>予約</b>。届く位置に来ると自動でスイングします</li>
+        <li><b>狙う</b>：予約したあとは<b>スティックが狙い専用</b>になり、移動は自動になります（上＝深く、下＝浅く、左右＝コース）。相手コートのマーカーが落下地点です</li>
+        <li><b>PERFECT</b>：早めに予約して良い体勢で打つと、速くて正確な球になります</li>
         <li><b>サーブ</b>：ボタンでトス → もう一度押して打つ。ボールが一番高いところで打つと良いサーブに</li>
-        <li><b>移動補助 ON</b>：スティックを離していると、打点へ自動で寄ってくれます</li>
+        <li><b>移動補助 OFF</b>：予約後も自分で移動し、打つ瞬間のスティックの向きで狙います（上級者向け）</li>
       </ul>
       <div class="shots">
         <div><span class="dot flat"></span><b>フラット</b> 速くて直線的。ミスも出やすい</div>
@@ -173,6 +174,21 @@ function showResult(winner) {
     </div>`);
   $('againBtn').addEventListener('click', () => { audio.click(); begin(); });
   $('titleBtn').addEventListener('click', () => { audio.click(); showTitle(); });
+}
+
+// ── 当たりの判定表示 ───────────────────────────
+let gradeTimer = 0;
+const GRADE_TEXT = { perfect: 'PERFECT!', good: 'NICE', poor: '' };
+export function showGrade(grade, type) {
+  const el = $('grade');
+  const text = type === 'smash' ? 'SMASH!' : GRADE_TEXT[grade];
+  if (!text) return;
+  el.textContent = text;
+  el.className = 'grade ' + (type === 'smash' ? 'perfect' : grade);
+  void el.offsetWidth;          // アニメーションを再生し直す
+  el.classList.add('on');
+  clearTimeout(gradeTimer);
+  gradeTimer = setTimeout(() => el.classList.remove('on'), 650);
 }
 
 // ── メッセージ ─────────────────────────────────

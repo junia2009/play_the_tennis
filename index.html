@@ -59,6 +59,15 @@ button{font:inherit;color:inherit;cursor:pointer}
   padding:5px 12px;border-radius:14px;background:rgba(0,0,0,.45);opacity:0;transition:opacity .2s;pointer-events:none;z-index:6;white-space:nowrap}
 #hint.on{opacity:1}
 
+/* ── 当たり判定 ── */
+.grade{position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);font-weight:900;font-style:italic;letter-spacing:2px;
+  pointer-events:none;opacity:0;z-index:7;white-space:nowrap;text-shadow:0 3px 0 rgba(0,0,0,.35)}
+.grade.on{animation:gradePop .65s ease-out forwards}
+.grade.perfect{font-size:clamp(30px,10vw,52px);color:#fff176;text-shadow:0 0 18px rgba(255,235,59,.8),0 3px 0 rgba(0,0,0,.4)}
+.grade.good{font-size:clamp(22px,7vw,34px);color:#b3e5fc}
+@keyframes gradePop{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}
+  30%{transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-80%) scale(1)}}
+
 /* ── 操作 ── */
 #controls{position:fixed;inset:0;z-index:4;pointer-events:none}
 #controls[hidden]{display:none}
@@ -146,6 +155,7 @@ body[data-phase=menu] #hud,body[data-phase=menu] #controls,body[data-phase=menu]
 <div id="call"></div>
 <div id="msg" class="msg"></div>
 <div id="hint"></div>
+<div id="grade" class="grade"></div>
 
 <div id="controls" hidden>
   <div id="stickZone"><div id="stickBase"><div id="stickKnob"></div></div></div>

@@ -30,6 +30,7 @@ function createPlayer(id) {
     pos: { x: 0, z: side * (COURT.halfL + 0.5) },
     vel: { x: 0, z: 0 },
     pending: null,          // 予約中のショット { type, t0 }
+    aimStick: null,         // 予約中に入力された狙い { x, y }
     plan: null,             // 移動目標 { x, z, t }
     planAt: 0,              // CPU: この時刻になったら移動目標を計算
     prep: false,            // 打つ構え（ラケットを引く）
@@ -107,7 +108,7 @@ function setupServe(second) {
   rp.pos = { x: boxX * 2.3, z: rp.side * (COURT.halfL + 0.7) };
   for (const p of state.players) {
     p.vel = { x: 0, z: 0 };
-    p.pending = null; p.plan = null; p.prep = false;
+    p.pending = null; p.aimStick = null; p.plan = null; p.prep = false;
     p.anim = { name: 'idle', t: 0, hand: 'fh' };
   }
 
@@ -205,7 +206,7 @@ function reachInfo(p) {
   const y = b.pos.y;
   return {
     dx, front, y,
-    inside: Math.abs(dx) <= PLAYER.reachX && front <= PLAYER.reachFront && front >= -PLAYER.reachBack
+    inside: Math.abs(dx) <= (p.id === HUMAN ? PLAYER.reachX : diff().reach) && front <= PLAYER.reachFront && front >= -PLAYER.reachBack
       && y >= PLAYER.minHitY && y <= PLAYER.maxHitY,
     late: front < -PLAYER.reachBack,
   };
@@ -228,16 +229,7 @@ function strikeRally(p, type, quality) {
   // 狙い
   let tx, depth;
   if (isHuman) {
-    const stickMag = Math.hypot(input.mx, input.my);
-    if (stickMag > 0.3) {
-      tx = input.mx * (COURT.halfW - 0.55);
-      depth = cfg.depth - input.my * 1.9;
-    } else {
-      tx = -Math.sign(opp.pos.x || (rand() - 0.5)) * randIn(1.0, 2.6);
-      depth = cfg.depth;
-    }
-    if (shotType === 'lob') depth = Math.max(depth, 9.2);
-    depth = clamp(depth, 3.5, 11.2);
+    ({ tx, depth } = humanAim(p, shotType));
   } else {
     ({ tx, depth } = cpuAim(p, opp, shotType));
   }
@@ -246,12 +238,17 @@ function strikeRally(p, type, quality) {
   // 誤差
   const ballSpeed = Math.hypot(b.vel.x, b.vel.z);
   const speedFactor = clamp(Math.sqrt(ballSpeed / 17), 0.8, 1.4);
-  const errMul = isHuman ? 1 : diff().err;
-  const sigma = cfg.err * errMul * speedFactor * (1.55 - 0.6 * quality.charge) * (1 + (1 - quality.pos) * 1.3) * quality.height;
+  // 当たりの良さ（人間のみ演出に使う）
+  const grade = quality.charge >= 0.75 && quality.pos >= 0.85 && quality.height === 1 ? 'perfect'
+    : quality.charge >= 0.35 && quality.pos >= 0.6 ? 'good' : 'poor';
+  const errMul = isHuman ? PLAYER.humanErr * (grade === 'perfect' ? 0.6 : 1) : diff().err;
+  const fatigue = 1 + Math.min(r.hits, 30) * 0.04;   // ラリーが続くほどミスが出やすい
+  const sigma = cfg.err * errMul * fatigue * speedFactor * (1.55 - 0.6 * quality.charge) * (1 + (1 - quality.pos) * 1.3) * quality.height;
   const ex = gauss(rand) * sigma;
   const ez = gauss(rand) * sigma * 0.9;
 
-  const pace = (0.80 + 0.26 * quality.charge) * (0.75 + 0.25 * quality.pos) * (isHuman ? 1 : diff().pace);
+  const pace = (0.80 + 0.26 * quality.charge) * (0.75 + 0.25 * quality.pos)
+    * (isHuman ? (grade === 'perfect' ? 1.15 : 1) : diff().pace);
   const from = { x: b.pos.x, y: b.pos.y, z: b.pos.z };
   const opt = { speed: cfg.speed * pace, spin: cfg.spin, clearance: cfg.clearance };
   const { vel } = solveShot(from, { x: tx + ex, z: tz + ez }, opt);
@@ -265,10 +262,29 @@ function strikeRally(p, type, quality) {
   r.hits++;
   r.t = 0;
   p.pending = null;
+  p.aimStick = null;
   p.prep = false;
   p.anim = { name: 'swing', t: 0, hand: volley && hand !== 'overhead' ? 'v' + hand : hand };
   onBallStruck(p.id);
-  emit('hit', { who: p.id, type: overhead ? 'smash' : shotType, serve: false, speed: Math.hypot(vel.x, vel.z), pos: from, volley });
+  emit('hit', { who: p.id, type: overhead ? 'smash' : shotType, serve: false, speed: Math.hypot(vel.x, vel.z), pos: from, volley, grade: isHuman ? grade : null });
+}
+
+// プレイヤーの狙い。予約中に入れたスティックの向きで決まる（入力なしなら相手の逆サイド深く）
+export function humanAim(p, type) {
+  const cfg = SHOTS[type];
+  const opp = state.players[1 - p.id];
+  const a = p.aimStick;
+  let tx, depth;
+  if (a) {
+    tx = clamp(a.x, -1, 1) * PLAYER.aimMaxX;
+    depth = cfg.depth - clamp(a.y, -1, 1) * 2.2;
+  } else {
+    const away = Math.abs(opp.pos.x) > 0.3 ? -Math.sign(opp.pos.x) : -(Math.sign(p.pos.x) || 1);
+    tx = away * 1.9;
+    depth = cfg.depth;
+  }
+  if (type === 'lob') depth = Math.max(depth, 9.2);
+  return { tx, depth: clamp(depth, 4.5, 11.3) };
 }
 
 function cpuAim(p, opp, type) {
@@ -430,15 +446,30 @@ function updateHuman(dt) {
   const r = state.rally;
   const incoming = r.lastHitter === CPU;
 
-  // ショット予約
+  const assist = state.settings.assist;
+  const stickNow = mag > 0.3 ? { x: input.mx / Math.max(1, mag), y: input.my / Math.max(1, mag) } : null;
+
+  // ショット予約（予約し直しで種類だけ変更）
   if (shot && incoming) {
-    p.pending = { type: shot, t0: state.time };
+    const t0 = p.pending ? p.pending.t0 : state.time;
+    p.pending = { type: shot, t0 };
+    if (!assist || !p.aimStick) p.aimStick = stickNow;
     emit('reserve', { type: shot });
+  }
+  // 狙いの更新：補助ONなら予約後のスティックは狙い専用。OFFなら打つ瞬間の向き
+  if (p.pending) {
+    if (assist) { if (stickNow) p.aimStick = stickNow; }
+    else p.aimStick = stickNow;
   }
 
   // 移動
   const swingSlow = p.anim.name === 'swing' && p.anim.t < 0.3 ? 0.45 : 1;
-  if (mag > 0.18) {
+  if (assist && p.pending && incoming) {
+    // 予約中は打点まで自動で走る
+    if (!p.plan) p.plan = planIntercept(p, state.ball, r);
+    if (p.plan) moveToward(p, p.plan.x, p.plan.z, PLAYER.maxSpeed * swingSlow, dt);
+    else accelTo(p, 0, 0, dt);
+  } else if (mag > 0.18) {
     const k = Math.min(1, mag);
     accelTo(p, input.mx / mag * k * PLAYER.maxSpeed * swingSlow, input.my / mag * k * PLAYER.maxSpeed * swingSlow, dt);
   } else if (state.settings.assist && incoming) {
@@ -454,10 +485,8 @@ function updateHuman(dt) {
 
   // 狙い表示
   if (p.pending) {
-    const cfg = SHOTS[p.pending.type];
-    let tx = 0, depth = cfg.depth;
-    if (mag > 0.3) { tx = input.mx * (COURT.halfW - 0.55); depth = clamp(cfg.depth - input.my * 1.9, 3.5, 11.2); }
-    state.aim = mag > 0.3 ? { x: tx, z: -depth } : null;
+    const { tx, depth } = humanAim(p, p.pending.type);
+    state.aim = { x: tx, z: -depth, type: p.pending.type };
   } else {
     state.aim = null;
   }
@@ -475,6 +504,7 @@ function updateHuman(dt) {
       // 振り遅れ
       p.anim = { name: 'swing', t: 0, hand: handFor(p, state.ball) };
       p.pending = null;
+      p.aimStick = null;
       p.prep = false;
       emit('whiff', { who: HUMAN });
     }
@@ -664,7 +694,7 @@ function goBetween(t, next) {
   state.between = { t, next };
   state.landing = null;
   state.aim = null;
-  for (const p of state.players) { p.pending = null; p.plan = null; p.prep = false; }
+  for (const p of state.players) { p.pending = null; p.aimStick = null; p.plan = null; p.prep = false; }
 }
 
 const REASON_TEXT = {
@@ -739,7 +769,9 @@ function updateHint() {
       : 'もう一度押して打つ！（高い位置ほど良い）';
   } else if (state.phase === 'rally' && state.rally.lastHitter === CPU) {
     const p = state.players[HUMAN];
-    h = p.pending ? `${SHOTS[p.pending.type].label} 予約中 — スティックで狙う` : 'ショットボタンで打つ準備！';
+    h = !p.pending ? 'ショットボタンで打つ準備！'
+      : state.settings.assist ? `${SHOTS[p.pending.type].label} — スティックで狙う（移動は自動）`
+      : `${SHOTS[p.pending.type].label} — 打つ瞬間のスティックで狙う`;
   }
   state.hint = h;
 }
